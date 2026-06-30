@@ -1,12 +1,4 @@
-/// Stock Vision - A cross-platform desktop stock analysis application
-///
-/// Phase 1: A-share market, fundamental analysis, Win/Mac/Linux
-/// Phase 2: Technical analysis indicators and charts
-/// Phase 3: Quantitative backtesting engine
-///
-/// Built with Rust + Iced (GUI) + Plotters (charts)
-
-use iced::{Sandbox, Settings, Size};
+use iced::{Application, Settings, Size};
 
 mod app;
 mod services;
@@ -19,7 +11,7 @@ fn main() -> iced::Result {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+                .unwrap_or_else(|_| "warn".into()),
         )
         .init();
 
