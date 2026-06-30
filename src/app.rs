@@ -1,8 +1,9 @@
 use iced::widget::{button, column, container, row, text, text_input, Column};
-use iced::{Application, Color, Command, Element, Length, Subscription};
+use iced::{Application, Color, Command, Element, Length};
 
 use stock_vision_data_model::*;
 use stock_vision_data_source::{DataSource, EastMoneySource, TencentSource};
+use stock_vision_analysis_core::FinancialAnalyzer;
 use std::sync::Arc;
 
 use crate::state::{AppState, Panel};
@@ -15,8 +16,8 @@ pub enum Message {
     SearchResultSelected(Stock),
     SearchResultsLoaded(Vec<Stock>),
     PanelChanged(Panel),
-    StockSelected(Stock),
     DailyBarsLoaded(Vec<DailyBar>),
+    FinancialDataLoaded(Vec<FinancialReport>),
     Error(String),
 }
 
@@ -24,6 +25,8 @@ pub struct StockVisionApp {
     state: AppState,
     search_source: Arc<EastMoneySource>,
     kline_source: Arc<TencentSource>,
+    fin_source: Arc<EastMoneySource>,
+    analyzer: FinancialAnalyzer,
 }
 
 impl Application for StockVisionApp {
@@ -38,6 +41,8 @@ impl Application for StockVisionApp {
                 state: AppState::new(),
                 search_source: Arc::new(EastMoneySource::new()),
                 kline_source: Arc::new(TencentSource::new()),
+                fin_source: Arc::new(EastMoneySource::new()),
+                analyzer: FinancialAnalyzer,
             },
             Command::none(),
         )
@@ -90,16 +95,51 @@ impl Application for StockVisionApp {
                 )
             }
             Message::PanelChanged(panel) => {
+                let is_fundamental = panel == Panel::Fundamental;
+                let needs_load = is_fundamental
+                    && self.state.selected_stock.is_some()
+                    && self.state.financial_reports.is_empty();
                 self.state.active_panel = panel;
-                Command::none()
-            }
-            Message::StockSelected(stock) => {
-                self.state.selected_stock = Some(stock.code);
-                self.state.stock_name = Some(stock.name);
-                Command::none()
+                if needs_load {
+                    let code = self.state.selected_stock.clone().unwrap();
+                    let exchange = Exchange::SZ; // default; TODO: store exchange in state
+                    let source = self.fin_source.clone();
+                    Command::perform(
+                        async move {
+                            source
+                                .get_financial_reports(&code, exchange, None)
+                                .await
+                                .unwrap_or_default()
+                        },
+                        Message::FinancialDataLoaded,
+                    )
+                } else {
+                    Command::none()
+                }
             }
             Message::DailyBarsLoaded(bars) => {
                 self.state.daily_bars = bars;
+                Command::none()
+            }
+            Message::FinancialDataLoaded(reports) => {
+                self.state.financial_reports = reports;
+                // Calculate health score
+                if let Some(report) = self.state.financial_reports.first() {
+                    let health = self.analyzer.score(
+                        report,
+                        &ValuationRatios {
+                            code: String::new(),
+                            date: chrono::Utc::now().date_naive(),
+                            pe: Some(15.0),
+                            pb: Some(2.0),
+                            ps: None,
+                            pcf: None,
+                            market_cap: None,
+                            dividend_yield: None,
+                        },
+                    );
+                    self.state.financial_health = Some(health);
+                }
                 Command::none()
             }
             Message::Error(err) => {
@@ -113,29 +153,22 @@ impl Application for StockVisionApp {
         let sidebar = self.view_sidebar();
         let main_content = self.view_main_content();
 
-        container(
-            row(vec![sidebar, main_content])
-                .width(Length::Fill)
-                .height(Length::Fill),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        container(row(vec![sidebar, main_content]))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 }
 
 impl StockVisionApp {
     fn view_sidebar(&self) -> Element<Message> {
-        let logo = text("Stock Vision").size(20);
-
-        let has_results = !self.state.search_results.is_empty();
         let search_input = text_input("搜索股票代码或名称...", &self.state.search_keyword)
             .on_input(Message::SearchInputChanged)
             .on_submit(Message::SearchSubmitted)
             .padding(8)
             .size(14);
 
-        let search_results: Element<Message> = if has_results {
+        let search_results: Element<Message> = if !self.state.search_results.is_empty() {
             let list: Vec<Element<Message>> = self.state.search_results.iter().map(|s| {
                 let label = format!("{}.{} {}", s.exchange.prefix(), s.code, s.name);
                 button(text(label).size(13))
@@ -150,14 +183,6 @@ impl StockVisionApp {
             text("").into()
         };
 
-        let panel_buttons = Column::new()
-            .push(button("📊 自选股").on_press(Message::PanelChanged(Panel::Watchlist)))
-            .push(button("📈 行情走势").on_press(Message::PanelChanged(Panel::Chart)))
-            .push(button("📋 基本面分析").on_press(Message::PanelChanged(Panel::Fundamental)))
-            .push(button("📐 技术分析").on_press(Message::PanelChanged(Panel::Technical)))
-            .push(button("⚙ 设置").on_press(Message::PanelChanged(Panel::Settings)))
-            .spacing(4);
-
         let stock_indicator: Element<Message> = match &self.state.stock_name {
             Some(name) => text(format!("当前: {}", name))
                 .size(12)
@@ -166,9 +191,17 @@ impl StockVisionApp {
             None => text("").into(),
         };
 
+        let panel_buttons = Column::new()
+            .push(button("📊 自选股").on_press(Message::PanelChanged(Panel::Watchlist)))
+            .push(button("📈 行情走势").on_press(Message::PanelChanged(Panel::Chart)))
+            .push(button("📋 基本面分析").on_press(Message::PanelChanged(Panel::Fundamental)))
+            .push(button("📐 技术分析").on_press(Message::PanelChanged(Panel::Technical)))
+            .push(button("⚙ 设置").on_press(Message::PanelChanged(Panel::Settings)))
+            .spacing(4);
+
         container(
             Column::new()
-                .push(logo)
+                .push(text("Stock Vision").size(20))
                 .push(search_input)
                 .push(search_results)
                 .push(stock_indicator)
