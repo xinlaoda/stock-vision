@@ -1,0 +1,10 @@
+[package]
+name = "stock-vision-chart-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Chart rendering engine using plotters"
+
+[dependencies]
+stock-vision-data-model = { path = "../data-model" }
+plotters = "0.3"
+chrono = "0.4"

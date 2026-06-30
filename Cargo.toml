@@ -1,0 +1,54 @@
+[package]
+name = "stock-vision"
+version = "0.1.0"
+edition = "2021"
+description = "A cross-platform desktop stock analysis application for A-share market"
+
+[dependencies]
+# GUI
+iced = { version = "0.12", features = ["tokio", "svg", "image", "advanced", "canvas"] }
+
+# Charting
+plotters = "0.3"
+plotters-iced = "0.10"
+
+# HTTP & Data
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Utilities
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+directories-next = "2"
+
+# Local crates
+stock-vision-data-source = { path = "crates/data-source" }
+stock-vision-data-model = { path = "crates/data-model" }
+stock-vision-chart-engine = { path = "crates/chart-engine" }
+stock-vision-analysis-core = { path = "crates/analysis-core" }
+stock-vision-indicator-core = { path = "crates/indicator-core" }
+stock-vision-storage = { path = "crates/storage" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
+
+[features]
+# Phase 1 features
+fundamental = []
+technical = []
+backtesting = []
+all = ["fundamental", "technical", "backtesting"]

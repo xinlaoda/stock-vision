@@ -1,0 +1,8 @@
+[package]
+name = "stock-vision-analysis-core"
+version = "0.1.0"
+edition = "2021"
+description = "Fundamental and quantitative analysis engine"
+
+[dependencies]
+stock-vision-data-model = { path = "../data-model" }

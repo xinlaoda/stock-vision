@@ -1,0 +1,8 @@
+[package]
+name = "stock-vision-indicator-core"
+version = "0.1.0"
+edition = "2021"
+description = "Technical indicator calculation engine"
+
+[dependencies]
+stock-vision-data-model = { path = "../data-model" }

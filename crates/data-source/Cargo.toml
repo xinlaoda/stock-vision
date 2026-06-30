@@ -1,0 +1,16 @@
+[package]
+name = "stock-vision-data-source"
+version = "0.1.0"
+edition = "2021"
+description = "Data source abstraction and implementations for A-share market"
+
+[dependencies]
+stock-vision-data-model = { path = "../data-model" }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+anyhow = "1"
+tokio = { version = "1", features = ["sync"] }
+async-trait = "0.1"
+tracing = "0.1"
