@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use crate::app::Message;
+use crate::ui::style;
 use crate::ui::charts::CandlestickCanvas;
 use iced::widget::{column, container, row, text, Column};
 use iced::{Color, Element, Length};
@@ -9,70 +10,41 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
         None => {
             let content = column![
                 text("请搜索并选择一只股票").size(18),
-                text("在左侧搜索框输入股票名称或代码，回车搜索，点击结果查看K线")
+                text("在左侧搜索框输入股票名称或代码，点击搜索或回车查看K线")
                     .size(14)
-                    .style(Color::from_rgb(0.5, 0.5, 0.6)),
+                    .style(style::palette::TEXT_SECONDARY),
             ]
             .spacing(8)
             .padding(16);
             return container(content).width(Length::Fill).height(Length::Fill).into();
         }
         Some(code) => {
-            let title = format!(
-                "{} - {}",
-                state.stock_name.as_deref().unwrap_or(code),
-                code
-            );
+            let title = format!("{}  {}", state.stock_name.as_deref().unwrap_or(code), code);
 
-            // Price summary
             let price_summary: Element<'_, Message> = if !state.daily_bars.is_empty() {
                 let latest = &state.daily_bars[state.daily_bars.len() - 1];
                 let change_pct = ((latest.close - latest.open) / latest.open * 100.0);
-                let color = if change_pct >= 0.0 {
-                    Color::from_rgb(0.9, 0.24, 0.24)
-                } else {
-                    Color::from_rgb(0.15, 0.65, 0.24)
-                };
+                let color = if change_pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
 
                 row![
-                    column![
-                        text("最新价").size(12).style(Color::from_rgb(0.5, 0.5, 0.6)),
-                        text(format!("{:.2}", latest.close)).size(28).style(color),
-                    ],
-                    column![
-                        text("涨幅").size(12).style(Color::from_rgb(0.5, 0.5, 0.6)),
-                        text(format!("{:.2}%", change_pct)).size(18).style(color),
-                    ],
-                    column![
-                        text("开盘").size(12).style(Color::from_rgb(0.5, 0.5, 0.6)),
-                        text(format!("{:.2}", latest.open)).size(18),
-                    ],
-                    column![
-                        text("最高").size(12).style(Color::from_rgb(0.5, 0.5, 0.6)),
-                        text(format!("{:.2}", latest.high)).size(18),
-                    ],
-                    column![
-                        text("最低").size(12).style(Color::from_rgb(0.5, 0.5, 0.6)),
-                        text(format!("{:.2}", latest.low)).size(18),
-                    ],
-                    column![
-                        text("成交量").size(12).style(Color::from_rgb(0.5, 0.5, 0.6)),
-                        text(format!("{:.0}万", latest.volume / 10000.0)).size(18),
-                    ],
+                    col_metric("最新价", format!("{:.2}", latest.close), 28, color),
+                    col_metric("涨幅", format!("{:.2}%", change_pct), 18, color),
+                    col_metric("开盘", format!("{:.2}", latest.open), 18, style::palette::TEXT_PRIMARY),
+                    col_metric("最高", format!("{:.2}", latest.high), 18, style::palette::TEXT_PRIMARY),
+                    col_metric("最低", format!("{:.2}", latest.low), 18, style::palette::TEXT_PRIMARY),
+                    col_metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18, style::palette::TEXT_PRIMARY),
                 ]
                 .spacing(24)
                 .into()
             } else {
                 text("正在加载数据...")
                     .size(14)
-                    .style(Color::from_rgb(0.5, 0.5, 0.6))
+                    .style(style::palette::TEXT_SECONDARY)
                     .into()
             };
 
-            // Build chart (consumes the CandlestickCanvas)
             let chart_element: Element<'static, Message> = if !state.daily_bars.is_empty() {
-                let candlestick = CandlestickCanvas::new(state.daily_bars.clone());
-                candlestick.into_element()
+                CandlestickCanvas::new(state.daily_bars.clone()).into_element()
             } else {
                 text("").into()
             };
@@ -89,4 +61,12 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             container(content).width(Length::Fill).height(Length::Fill).into()
         }
     }
+}
+
+fn col_metric(label: &str, value: String, size: u16, color: Color) -> Element<'_, Message> {
+    column![
+        text(label).size(12).style(style::palette::TEXT_SECONDARY),
+        text(value).size(size).style(color),
+    ]
+    .into()
 }

@@ -1,9 +1,7 @@
 use iced::widget::{button, column, container, row, text, text_input, Column};
 use iced::{Alignment, Application, Color, Command, Element, Font, Length};
 
-/// The default font (Microsoft YaHei) has no emoji glyphs, and cosmic-text does
-/// not fall back for these codepoints, so emoji rendered as tofu boxes. Render
-/// emoji explicitly with the Windows emoji font instead.
+/// Emoji font for Windows (Segoe UI Emoji), Linux fallback
 pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji");
 
 use stock_vision_data_model::*;
@@ -12,7 +10,7 @@ use stock_vision_analysis_core::FinancialAnalyzer;
 use std::sync::Arc;
 
 use crate::state::{AppState, Panel};
-use crate::ui::panels;
+use crate::ui::{panels, style};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -54,7 +52,7 @@ impl Application for StockVisionApp {
     }
 
     fn title(&self) -> String {
-        let base = "Stock Vision - A股分析工具";
+        let base = "Stock Vision";
         match &self.state.stock_name {
             Some(name) => format!("{} - {}", name, base),
             None => base.to_string(),
@@ -63,6 +61,7 @@ impl Application for StockVisionApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            // ── Search ──
             Message::SearchInputChanged(keyword) => {
                 self.state.search_keyword = keyword;
                 self.state.search_results.clear();
@@ -70,7 +69,11 @@ impl Application for StockVisionApp {
             }
             Message::SearchSubmitted => {
                 let keyword = self.state.search_keyword.clone();
+                if keyword.trim().is_empty() {
+                    return Command::none();
+                }
                 let source = self.search_source.clone();
+                self.state.search_results.clear();
                 Command::perform(
                     async move { source.search_stocks(&keyword).await.unwrap_or_default() },
                     Message::SearchResultsLoaded,
@@ -89,6 +92,7 @@ impl Application for StockVisionApp {
                 let code = stock.code.clone();
                 let exchange = stock.exchange.clone();
                 let source = self.kline_source.clone();
+                self.state.daily_bars.clear();
                 Command::perform(
                     async move {
                         source
@@ -99,6 +103,8 @@ impl Application for StockVisionApp {
                     Message::DailyBarsLoaded,
                 )
             }
+
+            // ── Navigation ──
             Message::PanelChanged(panel) => {
                 let is_fundamental = panel == Panel::Fundamental;
                 let needs_load = is_fundamental
@@ -107,7 +113,7 @@ impl Application for StockVisionApp {
                 self.state.active_panel = panel;
                 if needs_load {
                     let code = self.state.selected_stock.clone().unwrap();
-                    let exchange = Exchange::SZ; // default; TODO: store exchange in state
+                    let exchange = Exchange::SZ;
                     let source = self.fin_source.clone();
                     Command::perform(
                         async move {
@@ -122,13 +128,14 @@ impl Application for StockVisionApp {
                     Command::none()
                 }
             }
+
+            // ── Data ──
             Message::DailyBarsLoaded(bars) => {
                 self.state.daily_bars = bars;
                 Command::none()
             }
             Message::FinancialDataLoaded(reports) => {
                 self.state.financial_reports = reports;
-                // Calculate health score
                 if let Some(report) = self.state.financial_reports.first() {
                     let health = self.analyzer.score(
                         report,
@@ -167,20 +174,31 @@ impl Application for StockVisionApp {
 
 impl StockVisionApp {
     fn view_sidebar(&self) -> Element<Message> {
-        let search_input = text_input("搜索股票代码或名称...", &self.state.search_keyword)
-            .on_input(Message::SearchInputChanged)
-            .on_submit(Message::SearchSubmitted)
-            .padding(8)
-            .size(14);
+        // ── Search input + button row ──
+        let search_row = row![
+            text_input("输入代码或名称，回车搜索", &self.state.search_keyword)
+                .on_input(Message::SearchInputChanged)
+                .on_submit(Message::SearchSubmitted)
+                .padding(8)
+                .size(13)
+                .style(iced::theme::TextInput::Custom(Box::new(style::SearchInputStyle))),
+            button(text("搜索").size(12))
+                .on_press(Message::SearchSubmitted)
+                .style(iced::theme::Button::Custom(Box::new(style::PrimaryButton)))
+                .padding(8),
+        ]
+        .spacing(6)
+        .align_items(Alignment::Center);
 
+        // ── Search results ──
         let search_results: Element<Message> = if !self.state.search_results.is_empty() {
             let list: Vec<Element<Message>> = self.state.search_results.iter().map(|s| {
-                let label = format!("{}.{} {}", s.exchange.prefix(), s.code, s.name);
+                let label = format!("{}.{}  {}", s.exchange.prefix(), s.code, s.name);
                 button(text(label).size(13))
                     .on_press(Message::SearchResultSelected(s.clone()))
-                    .style(iced::theme::Button::Text)
+                    .style(iced::theme::Button::Custom(Box::new(style::SearchResultButton)))
                     .width(Length::Fill)
-                    .padding(4)
+                    .padding(6)
                     .into()
             }).collect();
             column(list).spacing(2).into()
@@ -188,14 +206,16 @@ impl StockVisionApp {
             text("").into()
         };
 
+        // ── Current stock indicator ──
         let stock_indicator: Element<Message> = match &self.state.stock_name {
             Some(name) => text(format!("当前: {}", name))
                 .size(12)
-                .style(Color::from_rgb(0.6, 0.8, 0.6))
+                .style(style::palette::TEXT_ACCENT)
                 .into(),
             None => text("").into(),
         };
 
+        // ── Navigation buttons ──
         let panel_buttons = Column::new()
             .push(nav_button("📊", "自选股", Panel::Watchlist))
             .push(nav_button("📈", "行情走势", Panel::Chart))
@@ -206,45 +226,48 @@ impl StockVisionApp {
 
         container(
             Column::new()
-                .push(text("Stock Vision").size(20))
-                .push(search_input)
+                .push(text("Stock Vision").size(20).style(iced::Color::from_rgb(0.9, 0.5, 0.1)))
+                .push(text("").size(4))
+                .push(search_row)
                 .push(search_results)
                 .push(stock_indicator)
+                .push(text("").size(8))
                 .push(panel_buttons)
-                .spacing(8)
+                .spacing(6)
                 .padding(16),
         )
         .width(220)
         .height(Length::Fill)
-        .style(iced::theme::Container::Custom(Box::new(
-            crate::ui::style::SidebarStyle,
-        )))
+        .style(iced::theme::Container::Custom(Box::new(style::SidebarStyle)))
         .into()
     }
 
     fn view_main_content(&self) -> Element<Message> {
-        match self.state.active_panel {
+        container(match self.state.active_panel {
             Panel::Watchlist => panels::watchlist::view(&self.state),
             Panel::Chart => panels::chart::view(&self.state),
             Panel::Fundamental => panels::fundamental::view(&self.state),
             Panel::Technical => panels::technical::view(&self.state),
             Panel::Settings => panels::settings::view(&self.state),
-        }
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(iced::theme::Container::Custom(Box::new(style::PanelStyle)))
+        .into()
     }
 }
 
-/// Build a sidebar navigation button whose leading emoji icon is rendered with
-/// the emoji font while the label uses the default (CJK-capable) font.
-fn nav_button(
-    icon: &'static str,
-    label: &'static str,
-    panel: Panel,
-) -> iced::widget::Button<'static, Message> {
+/// Navigation button with emoji icon + label
+fn nav_button(icon: &'static str, label: &'static str, panel: Panel) -> iced::widget::Button<'static, Message> {
     let content = row![
         text(icon).font(EMOJI_FONT).size(15),
         text(label).size(15),
     ]
-    .spacing(6)
+    .spacing(8)
     .align_items(Alignment::Center);
-    button(content).on_press(Message::PanelChanged(panel))
+    button(content)
+        .on_press(Message::PanelChanged(panel))
+        .style(iced::theme::Button::Custom(Box::new(style::NavButton)))
+        .width(Length::Fill)
+        .padding(8)
 }
