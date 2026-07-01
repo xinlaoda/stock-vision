@@ -746,7 +746,7 @@ impl Program<crate::app::Message> for CandlestickCanvas {
                         if li < bars.len() {
                             let bar = &bars[li];
                             // Return a click event - we'll process it in the drawing tool mode
-                            return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close)));
+                            return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close, hover_idx)));
                         }
                     }
                 }

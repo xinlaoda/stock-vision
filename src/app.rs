@@ -38,7 +38,7 @@ pub enum Message {
     ZoomOut,
     HoverBar(Option<usize>),
     PanBy(f32),
-    AddDrawingLine(f64),
+    AddDrawingLine(f64, usize),  // (price, bar_global_index)
     ClearDrawingLines,
     MarketIndicesLoaded(Vec<crate::state::MarketIndexData>),
     IntradayBarsLoaded(Vec<IntradayBar>),
@@ -302,19 +302,18 @@ impl StockVision {
             }
             Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
             Message::MarketIndicesLoaded(indices) => { self.state.market_indices = indices; Task::none() }
-            Message::AddDrawingLine(price) => {
+            Message::AddDrawingLine(price, bar_idx) => {
                 let mode = self.state.drawing_tool_mode;
                 match mode {
                     DrawingToolMode::None | DrawingToolMode::HorizontalLine => {
                         // Add horizontal line at clicked price
-                        let max_idx = self.state.daily_bars.len().saturating_sub(1);
                         self.state.drawing_lines.push(crate::state::DrawingLine {
                             tool_type: DrawingToolMode::HorizontalLine,
                             color: (0.8, 0.8, 0.3),
                             price1: price,
                             price2: 0.0,
-                            bar_idx1: max_idx,
-                            bar_idx2: max_idx,
+                            bar_idx1: bar_idx,
+                            bar_idx2: bar_idx,
                         });
                         Task::none()
                     }
@@ -322,14 +321,13 @@ impl StockVision {
                         // TrendLine / Ray / ParallelChannel: need two clicks
                         match self.state.pending_drawing {
                             None => {
-                                // First click: save starting point
-                                let idx = self.state.daily_bars.len().saturating_sub(1);
-                                self.state.pending_drawing = Some((idx, price));
+                                // First click: save starting point (use bar_idx from click)
+                                self.state.pending_drawing = Some((bar_idx, price));
                                 Task::none()
                             }
                             Some((idx1, price1)) => {
-                                // Second click: complete the drawing
-                                let idx2 = self.state.daily_bars.len().saturating_sub(1);
+                                // Second click: complete the drawing (use bar_idx from click)
+                                let idx2 = bar_idx;
                                 let color = match mode {
                                     DrawingToolMode::TrendLine => (0.3, 0.7, 1.0),
                                     DrawingToolMode::Ray => (1.0, 0.4, 0.7),
