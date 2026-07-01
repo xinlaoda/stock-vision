@@ -1,124 +1,137 @@
 # Stock Vision
 
-跨平台桌面股票分析工具 — 从基本面分析起步，逐步扩展至技术分析和量化回测。
+跨平台桌面 A 股分析工具 — 基本面分析 + 技术分析 + 实时行情。
 
-## 项目目标
+## 功能一览
 
-构建一款 **面向普通投资者的 A 股桌面分析软件**，对标通达信/同花顺/东方财富的核心功能，
-同时保持现代化跨平台体验和开源自由。
+### ✅ Phase 1：A股基础功能（全部完成）
 
-### 路线图
+| 模块 | 功能 |
+|------|------|
+| **股票搜索** | 东方财富 API 搜索，支持代码/名称/拼音 |
+| **K 线图** | 日/周/月/年K + 蜡烛图 + 成交量柱 + MA5/10/20/60 均线 |
+| **分时图** | 独立折线图 + 成交量柱 + VWAP 均价线 + 十字光标 |
+| **分时数据** | 5/15/30/60分钟 + 1分钟分时数据 |
+| **时间范围** | 1月/3月/6月/1年/2年/5年/年初至今/全部 |
+| **交互** | 鼠标滚轮缩放 / 拖拽平移 / 十字光标 Tooltip |
+| **首页** | 上证/深证/创业板/科创50 指数 + 走势图 + 自适应网格 |
+| **基本面** | EPS/ROE/营收/利润/负债/现金流 + 健康评分 |
+| **自选股** | 搜索添加 + 删除 + 持久化（重启保留）+ 快捷导航 |
+| **浏览历史** | 点击量自动排序 + 持久化 |
+| **后台同步** | 智能缓存判断 + 自动加载股票数据 |
+| **缓存** | SQLite 本地持久化，已缓存数据不重复请求 |
+| **设置** | 数据源信息 / 缓存状态 / 主题切换 / 关于 |
+| **导出** | K 线数据导出 CSV |
 
-| 阶段 | 功能 | 状态 |
-|------|------|------|
-| **Phase 1** | 基本面分析 + 行情图表 + 自选股管理 | 🚧 进行中 |
-| **Phase 2** | 技术指标 (MA/MACD/RSI/BOLL) + 技术图表 | 📅 规划 |
-| **Phase 3** | 量化回测引擎 + 策略编辑器 | 📅 规划 |
+### ✅ Phase 2：技术分析（全部完成）
+
+| 模块 | 功能 |
+|------|------|
+| **MA 均线** | MA5/10/20/60 叠加 + 参数可调 |
+| **MACD** | DIF/DEA 线 + 柱状图 + 参数可调 |
+| **KDJ** | K/D/J 三线 + 参数可调 |
+| **RSI** | 超买超卖线 (70/30) + 参数可调 |
+| **BOLL** | 布林带上中下三轨 + 参数可调 |
+| **技术面板** | 指标开关切换 + 当前值显示 + 参数编辑 |
+| **动态副图** | MACD/KDJ/RSI 根据选择自动切换 |
+| **画线工具** | 水平线 / 趋势线(两点) / 射线 / 平行通道 |
+| **实时行情** | 每 5 秒自动轮询更新最新价格 |
+
+### 📅 Phase 3：量化回测（规划中）
+
+- 回测引擎 + 策略框架
+- 金叉死叉 / 均线突破策略
+- 收益率曲线 / 胜率 / 最大回撤
 
 ## 技术栈
 
 | 层 | 技术 | 说明 |
 |----|------|------|
 | **语言** | Rust | 性能、内存安全、跨平台编译 |
-| **GUI 框架** | [Iced](https://github.com/iced-rs/iced) (Elm 架构) | 原生跨平台，声明式 UI |
-| **图表引擎** | [Plotters](https://github.com/plotters-rs/plotters) | 金融 K 线/指标渲染 |
-| **网络请求** | reqwest + serde | HTTP API 调用 |
-| **本地存储** | SQLite (rusqlite) | 数据缓存 + 配置 |
-| **数据源** | 东方财富 API / Tushare | A 股实时 + 历史数据 |
+| **GUI** | [Iced](https://github.com/iced-rs/iced) 0.14 (Elm 架构) | 原生跨平台，声明式 UI |
+| **图表** | Iced Canvas (原生) | 高性能自定义绘制 |
+| **网络** | reqwest | HTTP 数据源 |
+| **存储** | SQLite (rusqlite) | 数据缓存 + 持久化 |
 | **运行时** | Tokio | 异步数据加载 |
+| **数据源** | 腾讯财经 + 东方财富 (双源 Fallback) | A 股实时 + 历史 |
 
-### 架构
+## 架构
 
 ```
 stock-vision/
-├── src/                    # 主应用 (Iced Sandbox)
-│   ├── app.rs             # Elm 架构: Model / Update / View
-│   ├── state/             # 应用状态管理
+├── src/                       # 主应用
+│   ├── main.rs               # iced entry point
+│   ├── app.rs                # Elm 架构: Model / Update / View
+│   ├── state/mod.rs          # 应用状态 (AppState / KlinePeriod / TimeRange)
 │   ├── ui/
-│   │   ├── panels/        # 功能面板 (自选/行情/基本面/技术/设置)
-│   │   ├── widgets/       # 可复用 UI 组件
-│   │   └── style.rs       # 主题和样式
-│   └── services/          # 业务逻辑编排
+│   │   ├── style.rs          # 配色系统 + 亮色/深色主题
+│   │   ├── charts/
+│   │   │   ├── candlestick_chart.rs  # K 线图 (三区布局: K线+成交量+副图)
+│   │   │   └── intraday_chart.rs     # 分时走势图 (折线+成交量+VWAP)
+│   │   └── panels/
+│   │       ├── home.rs       # 首页市场概况
+│   │       ├── watchlist.rs  # 自选股
+│   │       ├── chart.rs      # 行情走势 (K线/分时 + 技术指标)
+│   │       ├── fundamental.rs # 基本面分析
+│   │       ├── technical.rs  # 技术分析 (指标开关 + 参数配置)
+│   │       └── settings.rs   # 设置 (主题/数据源/缓存)
+│   └── services/
+│       ├── data_service.rs   # 数据服务 (缓存 + Fallback 多源)
+│       ├── analysis_service.rs # 分析服务
+│       └── indicator_service.rs # 指标计算服务
 ├── crates/
-│   ├── data-model/        # 核心领域模型 (Stock/Bars/Reports/Indicators)
-│   ├── data-source/       # 数据源抽象层 (EastMoney/Mock)
-│   ├── chart-engine/      # 图表渲染引擎 (plotters 封装)
-│   ├── analysis-core/     # 基本面分析/财务健康评分
-│   ├── indicator-core/    # 技术指标计算 (SMA/EMA/MACD/RSI/BOLL)
-│   └── storage/           # SQLite 持久化层
-└── docs/                  # 设计文档
+│   ├── data-model/           # 领域模型 (Stock/DailyBar/FinancialReport)
+│   ├── data-source/          # 数据源 (Tencent/EastMoney/Mock + FallbackSource)
+│   ├── indicator-core/       # 技术指标计算 (SMA/EMA/MACD/RSI/KDJ/BOLL)
+│   ├── analysis-core/        # 基本面分析/财务健康评分
+│   ├── chart-engine/         # 图表引擎 (plotters 封装，备用)
+│   └── storage/              # SQLite 持久化层
 ```
 
 ## 快速开始
 
 ```bash
-# 克隆
-git clone <repo-url>
+# 前置条件: Rust 1.75+
+git clone https://github.com/xinlaoda/stock-vision.git
+cd stock-vision
 
-# 运行
+# 运行开发版本
 cargo run
 
-# 开发模式
-cargo watch -x run
+# 发布构建
+cargo build --release
 ```
 
-## Phase 1 功能详情
+### Windows 注意事项
 
-### 基本面分析
-- 公司财务数据展示 (营收/利润/资产/负债/现金流)
-- 财务健康评分系统 (ROE/负债率/利润率/估值多维评分)
-- 估值指标 (PE/PB/PS/PCF/股息率)
+项目在 Linux 上开发，通过 Git 同步到 Windows：
+```bash
+# Windows 端
+git pull
+cargo run
+```
 
-### 行情图表
-- K 线图 (日线/复权支持)
-- 价格走势概览
-
-### 自选股
-- 搜索添加到自选
-- 自选股列表管理
+默认字体设置为 Microsoft YaHei，解决中文显示问题。
 
 ## 数据源
 
-### 东方财富 API (待实现完整解析)
-- 搜索: `searchadapter.eastmoney.com`
-- K 线: `push2his.eastmoney.com`
-- 财务: EastMoney finance API
+| 功能 | 主源 | 备源 | 
+|------|------|------|
+| 股票搜索 | 东方财富 `searchadapter.eastmoney.com` | - |
+| 日K线 | 腾讯财经 `web.ifzq.gtimg.cn` | - |
+| 分时数据 | 腾讯 `mkline` 接口 | 东方财富 `push2his` |
+| 基本面 | 东方财富 `datacenter.eastmoney.com` | - |
+| 实时行情 | 腾讯财经 (每5秒轮询) | - |
 
-### Mock 数据源 (开发调试用)
-- 内置模拟数生成器
+所有数据源采用 **Fallback 策略**，主源失败自动切换到备源。
 
-## 支持市场
+## 技术特色
 
-- **Phase 1**: A 股 (深交所/上交所)
-- **未来**: 美股、港股
+- **双源 Fallback**: 多个数据源冗余，一个失败自动切换
+- **智能缓存**: 已缓存数据不重复请求网络
+- **响应式布局**: 首页指数卡片根据窗口宽度自适应 1/2 列
+- **跨平台**: 一次编写，Windows/macOS/Linux 均可编译运行
 
 ## 许可
 
 MIT
-
-## API 对接状态
-
-### ✅ 已对接并验证（Phase 1）
-
-| 功能 | 数据源 | API | 状态 |
-|------|--------|-----|------|
-| **股票搜索** | 东方财富 | `searchadapter.eastmoney.com` | ✅ 支持中文/代码搜索，过滤A股 |
-| **日K线** | 腾讯财经 | `web.ifzq.gtimg.cn` | ✅ 前复权，2000条上限 |
-| **数据缓存** | SQLite | `rusqlite` | ✅ 本地持久化 |
-
-### 📅 待对接
-
-| 功能 | 数据源 | 优先级 |
-|------|--------|--------|
-| 财务报告 | 新浪/东方财富 | P1 - Phase 1 关键 |
-| 实时行情 | 腾讯/新浪 | P2 |
-| 估值指标 | 东方财富 | P2 |
-| 分钟K线 | 腾讯 | P3 |
-
-### 代码验证
-
-```bash
-# 运行 API 测试
-cargo test test_search -- --nocapture
-cargo test test_tencent_kline -- --nocapture
-```
