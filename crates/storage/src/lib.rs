@@ -48,6 +48,14 @@ impl Storage {
                 stocks TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS watch_stocks (
+                code TEXT NOT NULL,
+                name TEXT NOT NULL,
+                exchange TEXT NOT NULL,
+                added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (code, exchange)
+            );
+
             CREATE TABLE IF NOT EXISTS cached_reports (
                 code TEXT NOT NULL,
                 report_date TEXT NOT NULL,
@@ -240,6 +248,47 @@ impl Storage {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 stocks: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    // ── Watch stocks (single flat list, used by AppState.watchlist) ──
+
+    pub fn save_watch_stocks(&self, stocks: &[Stock]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM watch_stocks", [])?;
+        let mut stmt = conn.prepare_cached(
+            "INSERT INTO watch_stocks (code, name, exchange) VALUES (?1, ?2, ?3)",
+        )?;
+        for stock in stocks {
+            stmt.execute(rusqlite::params![
+                stock.code,
+                stock.name,
+                format!("{:?}", stock.exchange),
+            ])?;
+        }
+        Ok(())
+    }
+
+    pub fn load_watch_stocks(&self) -> Result<Vec<Stock>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT code, name, exchange FROM watch_stocks ORDER BY added_at",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let exchange_str: String = row.get(2)?;
+            let exchange = match exchange_str.as_str() {
+                "SH" => Exchange::SH,
+                "SZ" => Exchange::SZ,
+                _ => Exchange::SZ,
+            };
+            Ok(Stock {
+                code: row.get(0)?,
+                name: row.get(1)?,
+                exchange,
+                sector: None, industry: None, list_date: None,
+                total_shares: None, float_shares: None,
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())

@@ -179,6 +179,9 @@ impl AppState {
             None => Storage::in_memory().unwrap(),
         };
 
+        // Load persisted watchlist
+        let watchlist_from_db = storage.load_watch_stocks().unwrap_or_default();
+
         let mut state = Self {
             search_keyword: String::new(),
             search_results: Vec::new(),
@@ -198,7 +201,7 @@ impl AppState {
             drawing_lines: Vec::new(),
             browse_history: Vec::new(),
             market_indices: Vec::new(),
-            watchlist: Vec::new(),
+            watchlist: watchlist_from_db,
             active_panel: Panel::default(),
             current_time: Utc::now(),
             storage: Arc::new(storage),
@@ -222,6 +225,12 @@ impl AppState {
                     list_date: None,
                     total_shares: None,
                     float_shares: None,
+                });
+                // Persist to database
+                let stocks = self.watchlist.clone();
+                let s = self.storage.clone();
+                tokio::spawn(async move {
+                    let _ = s.save_watch_stocks(&stocks);
                 });
             }
         }
@@ -250,5 +259,11 @@ impl AppState {
 
     pub fn remove_from_watchlist(&mut self, code: &str) {
         self.watchlist.retain(|s| s.code != code);
+        // Persist to database
+        let stocks = self.watchlist.clone();
+        let s = self.storage.clone();
+        tokio::spawn(async move {
+            let _ = s.save_watch_stocks(&stocks);
+        });
     }
 }

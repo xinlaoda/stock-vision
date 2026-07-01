@@ -1,7 +1,7 @@
 use crate::state::{AppState, KlinePeriod, TimeRange};
 use crate::app::Message;
 use crate::ui::style;
-use crate::ui::charts::CandlestickCanvas;
+use crate::ui::charts::{CandlestickCanvas, IntradayCanvas};
 use iced::widget::{button, column, container, row, text};
 use iced::{Color, Element, Fill};
 use iced::widget::button::Status;
@@ -76,15 +76,6 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             let title_elem = text(title).size(22.0).color(title_color);
 
             let label_color = style::palette::TEXT_SECONDARY;
-            // Determine which bars to use for price summary
-            let active_bars: &[stock_vision_data_model::DailyBar] = if state.intraday_period.is_some() && !state.intraday_bars.is_empty() {
-                // Convert intraday bars temporarily for display
-                // Use the intraday bars data directly
-                &state.daily_bars  // Will be empty, fallback to below
-            } else {
-                &state.daily_bars
-            };
-
             let price_summary: Element<'_, Message> = if !state.daily_bars.is_empty() {
                 let latest = &state.daily_bars[state.daily_bars.len() - 1];
                 let change_pct = (latest.close - latest.open) / latest.open * 100.0;
@@ -115,8 +106,8 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 }
             };
 
-            // ── MA Legend ──
-            let ma_legend: Element<'_, Message> = if !state.daily_bars.is_empty() {
+            // ── MA Legend (hidden for intraday) ──
+            let ma_legend: Element<'_, Message> = if state.intraday_period.is_none() && !state.daily_bars.is_empty() {
                 let bars = &state.daily_bars;
                 row![
                     ma_item("MA5", compute_ma(bars, 5), Color::from_rgb(1.0, 0.8, 0.0)),
@@ -178,23 +169,8 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
             // ── Chart ──
             let chart_element: Element<'static, Message> = if state.intraday_period.is_some() && !state.intraday_bars.is_empty() {
-                // Use intraday bars directly (no aggregation needed)
-                let ibars = state.intraday_bars.clone();
-                // Convert IntradayBar to a pseudo-DailyBar for rendering
-                let converted: Vec<stock_vision_data_model::DailyBar> = ibars.iter().map(|ib| {
-                    // Parse datetime to extract date
-                    let date = ib.datetime.split(' ').next()
-                        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                        .unwrap_or(chrono::Utc::now().date_naive());
-                    stock_vision_data_model::DailyBar {
-                        code: ib.code.clone(),
-                        date,
-                        open: ib.open, high: ib.high, low: ib.low, close: ib.close,
-                        volume: ib.volume, amount: ib.amount,
-                        change_pct: None,
-                    }
-                }).collect();
-                CandlestickCanvas::new(converted, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset, state.drawing_lines.clone()).into_element()
+                // Use dedicated intraday chart (line chart + volume)
+                IntradayCanvas::new(state.intraday_bars.clone(), state.hovered_bar_index).into_element()
             } else if !state.daily_bars.is_empty() {
                 let filtered = filter_bars(&state.daily_bars, state.time_range);
                 let period = state.kline_period;
