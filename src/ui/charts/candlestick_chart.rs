@@ -6,17 +6,21 @@ use stock_vision_data_model::DailyBar;
 pub struct CandlestickCanvas {
     bars: Vec<DailyBar>,
     cache: Cache,
+    scroll_offset: usize,
+    visible_count: usize,
 }
 
 impl CandlestickCanvas {
     pub fn new(bars: Vec<DailyBar>) -> Self {
+        let visible = bars.len().min(60);
         Self {
             bars,
             cache: Cache::new(),
+            scroll_offset: 0,
+            visible_count: visible,
         }
     }
 
-    /// Consume self and return an Element
     pub fn into_element(self) -> Element<'static, crate::app::Message> {
         Canvas::new(self)
             .width(Length::Fill)
@@ -44,10 +48,16 @@ impl Program<crate::app::Message> for CandlestickCanvas {
 }
 
 impl CandlestickCanvas {
+    fn get_visible_bars(&self) -> &[DailyBar] {
+        let end = self.bars.len() - self.scroll_offset;
+        let start = end.saturating_sub(self.visible_count);
+        &self.bars[start..end]
+    }
+
     fn draw_candlesticks(&self, frame: &mut Frame) {
         let width = frame.width();
         let height = frame.height();
-        let bars = &self.bars;
+        let bars = self.get_visible_bars();
 
         if bars.is_empty() {
             return;
@@ -62,21 +72,18 @@ impl CandlestickCanvas {
 
         let bar_count = bars.len() as f32;
         let total_width = width - 60.0;
-        let bar_width = (total_width / bar_count * 0.6).max(2.0).min(20.0);
         let spacing = total_width / bar_count;
         let start_x = 50.0;
         let bottom_y = height - 25.0;
         let top_y = 15.0;
         let chart_height = bottom_y - top_y;
 
-        // Background
         frame.fill_rectangle(
             Point::new(0.0, 0.0),
             Size::new(width, height),
             Color::from_rgb(0.07, 0.07, 0.11),
         );
 
-        // Grid lines
         let grid_color = Color::from_rgb(0.16, 0.16, 0.19);
         for i in 0..5 {
             let y = top_y + chart_height * (i as f32 / 4.0);
@@ -87,7 +94,8 @@ impl CandlestickCanvas {
             );
         }
 
-        // Candlesticks
+        let bar_width = (spacing * 0.6).max(2.0).min(20.0);
+
         for (i, bar) in bars.iter().enumerate() {
             let x = start_x + i as f32 * spacing;
             let map_price = |p: f64| -> f32 {
@@ -107,14 +115,12 @@ impl CandlestickCanvas {
 
             let candle_center = x + bar_width / 2.0;
 
-            // Wick
             frame.fill_rectangle(
                 Point::new(candle_center - 1.0, high_y),
                 Size::new(2.0, (low_y - high_y).max(1.0)),
                 color,
             );
 
-            // Body
             let body_top = open_y.min(close_y);
             let body_height = (open_y - close_y).abs().max(1.0);
             frame.fill_rectangle(
@@ -124,7 +130,6 @@ impl CandlestickCanvas {
             );
         }
 
-        // Y-axis labels
         let font_size = 12.0;
         for i in 0..5 {
             let price = min_price + price_range * (1.0 - i as f64 / 4.0);
@@ -138,7 +143,6 @@ impl CandlestickCanvas {
             });
         }
 
-        // X-axis date labels
         let labels = [
             (0, bars.first().unwrap().date),
             (bars.len() / 2, bars[bars.len() / 2].date),

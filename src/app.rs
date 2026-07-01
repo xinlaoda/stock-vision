@@ -1,26 +1,42 @@
+use iced::time;
 use iced::widget::{button, column, container, row, text, text_input, Column};
-use iced::{Alignment, Application, Color, Command, Element, Font, Length};
+use iced::{Alignment, Application, Command, Element, Font, Length, Subscription};
+
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
 
 pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji");
 
 use stock_vision_data_model::*;
 use stock_vision_data_source::{DataSource, EastMoneySource, TencentSource};
 use stock_vision_analysis_core::FinancialAnalyzer;
-use std::sync::Arc;
 
 use crate::state::{AppState, Panel};
 use crate::ui::{panels, style};
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    // Search
     SearchInputChanged(String),
     SearchSubmitted,
     SearchResultSelected(Stock),
     SearchResultsLoaded(Vec<Stock>),
+
+    // Navigation
     PanelChanged(Panel),
+
+    // Data loading
     DailyBarsLoaded(Vec<DailyBar>),
     FinancialDataLoaded(Vec<FinancialReport>),
     Error(String),
+
+    // Watchlist
+    AddToWatchlist,
+    RemoveFromWatchlist(String),
+
+    // Clock
+    Tick(DateTime<Utc>),
 }
 
 pub struct StockVisionApp {
@@ -58,8 +74,20 @@ impl Application for StockVisionApp {
         }
     }
 
+    fn subscription(&self) -> Subscription<Message> {
+        // 每秒更新一次时钟
+        time::every(std::time::Duration::from_secs(1))
+            .map(|_| Message::Tick(Utc::now()))
+    }
+
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            // ── Clock ──
+            Message::Tick(now) => {
+                self.state.current_time = now;
+                Command::none()
+            }
+
             // ── Search ──
             Message::SearchInputChanged(keyword) => {
                 self.state.search_keyword = keyword;
@@ -72,7 +100,6 @@ impl Application for StockVisionApp {
                 if keyword.is_empty() {
                     return Command::none();
                 }
-                // Strip sz/sh/bj prefix if present, e.g. "sz000001" -> "000001"
                 let cleaned = keyword
                     .trim_start_matches(|c: char| c.is_alphabetic())
                     .to_string();
@@ -94,6 +121,7 @@ impl Application for StockVisionApp {
                 self.state.search_results.clear();
                 self.state.selected_stock = Some(stock.code.clone());
                 self.state.stock_name = Some(stock.name.clone());
+                self.state.stock_exchange = Some(stock.exchange.clone());
                 self.state.active_panel = Panel::Chart;
                 let code = stock.code.clone();
                 let exchange = stock.exchange.clone();
@@ -164,6 +192,16 @@ impl Application for StockVisionApp {
                 eprintln!("Error: {}", err);
                 Command::none()
             }
+
+            // ── Watchlist ──
+            Message::AddToWatchlist => {
+                self.state.add_to_watchlist();
+                Command::none()
+            }
+            Message::RemoveFromWatchlist(code) => {
+                self.state.remove_from_watchlist(&code);
+                Command::none()
+            }
         }
     }
 
@@ -180,7 +218,6 @@ impl Application for StockVisionApp {
 
 impl StockVisionApp {
     fn view_sidebar(&self) -> Element<Message> {
-        // ── Search input + button ──
         let search_row = row![
             text_input("输入代码(如000001)或名称", &self.state.search_keyword)
                 .on_input(Message::SearchInputChanged)
@@ -196,7 +233,6 @@ impl StockVisionApp {
         .spacing(6)
         .align_items(Alignment::Center);
 
-        // ── Search results ──
         let search_results: Element<Message> = if !self.state.search_results.is_empty() {
             let list: Vec<Element<Message>> = self.state.search_results.iter().map(|s| {
                 let label = format!("{}.{}  {}", s.exchange.prefix(), s.code, s.name);
@@ -212,16 +248,45 @@ impl StockVisionApp {
             text("").into()
         };
 
-        // ── Current stock indicator ──
         let stock_indicator: Element<Message> = match &self.state.stock_name {
-            Some(name) => text(format!("当前: {}", name))
-                .size(12)
-                .style(style::palette::TEXT_ACCENT)
-                .into(),
+            Some(name) => {
+                let in_watchlist = self.state.selected_stock.as_ref().map_or(false, |code| {
+                    self.state.watchlist.iter().any(|s| &s.code == code)
+                });
+                row![
+                    text(format!("当前: {}", name))
+                        .size(12)
+                        .style(style::palette::TEXT_ACCENT),
+                    if in_watchlist {
+                        text(" ★").size(12).style(style::palette::RISE)
+                    } else {
+                        text("").into()
+                    },
+                ]
+                .spacing(4)
+                .into()
+            }
             None => text("").into(),
         };
 
-        // ── Navigation buttons ──
+        // Add to watchlist button
+        let add_watchlist_btn: Element<Message> = {
+            let has_stock = self.state.selected_stock.is_some();
+            let already = self.state.selected_stock.as_ref().map_or(false, |code| {
+                self.state.watchlist.iter().any(|s| &s.code == code)
+            });
+            if has_stock && !already {
+                button(text("+ 加入自选").size(12))
+                    .on_press(Message::AddToWatchlist)
+                    .style(iced::theme::Button::Custom(Box::new(style::PrimaryButton)))
+                    .padding(6)
+                    .width(Length::Fill)
+                    .into()
+            } else {
+                text("").into()
+            }
+        };
+
         let panel_buttons = Column::new()
             .push(nav_button("📊", "自选股", Panel::Watchlist))
             .push(nav_button("📈", "行情走势", Panel::Chart))
@@ -232,11 +297,12 @@ impl StockVisionApp {
 
         container(
             Column::new()
-                .push(text("Stock Vision").size(20).style(Color::from_rgb(0.9, 0.5, 0.1)))
+                .push(text("Stock Vision").size(20).style(iced::Color::from_rgb(0.9, 0.5, 0.1)))
                 .push(text("").size(4))
                 .push(search_row)
                 .push(search_results)
                 .push(stock_indicator)
+                .push(add_watchlist_btn)
                 .push(text("").size(8))
                 .push(panel_buttons)
                 .spacing(6)
@@ -249,13 +315,25 @@ impl StockVisionApp {
     }
 
     fn view_main_content(&self) -> Element<Message> {
-        container(match self.state.active_panel {
+        let content = match self.state.active_panel {
             Panel::Watchlist => panels::watchlist::view(&self.state),
             Panel::Chart => panels::chart::view(&self.state),
             Panel::Fundamental => panels::fundamental::view(&self.state),
             Panel::Technical => panels::technical::view(&self.state),
             Panel::Settings => panels::settings::view(&self.state),
-        })
+        };
+
+        // Wrap with clock bar
+        let time_str = self.state.current_time.format("%Y-%m-%d %H:%M:%S").to_string();
+        let clock_bar = row![
+            text("").width(Length::Fill),
+            text(time_str).size(13).style(style::palette::TEXT_SECONDARY),
+        ]
+        .padding(8);
+
+        container(
+            column![clock_bar, content].width(Length::Fill).height(Length::Fill),
+        )
         .width(Length::Fill)
         .height(Length::Fill)
         .style(iced::theme::Container::Custom(Box::new(style::PanelStyle)))

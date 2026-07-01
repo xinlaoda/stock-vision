@@ -9,7 +9,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     match &state.selected_stock {
         None => {
             let content = column![
-                text("请搜索并选择一只股票").size(18),
+                text("请搜索并选择一只股票").size(18).style(style::palette::TEXT_PRIMARY),
                 text("搜索后点击「基本面分析」查看财务数据")
                     .size(14).style(style::palette::TEXT_SECONDARY),
             ]
@@ -18,8 +18,8 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
         }
         Some(code) => {
             let name = state.stock_name.as_deref().unwrap_or(code);
-            let mut content = Column::new().spacing(8).padding(16);
-            content = content.push(text(format!("{}  {}", name, code)).size(22));
+            let mut content = Column::new().spacing(6).padding(16);
+            content = content.push(text(format!("{}  {}", name, code)).size(22).style(style::palette::TEXT_PRIMARY));
 
             if state.financial_reports.is_empty() {
                 content = content.push(
@@ -36,7 +36,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     content = content.push(text("").size(4));
                     content = content.push(
                         row![
-                            text("财务健康评分").size(16),
+                            text("财务健康评分").size(16).style(style::palette::TEXT_PRIMARY),
                             text(format!("{} / 100", health.score)).size(24).style(score_color),
                         ].spacing(12)
                     );
@@ -52,36 +52,36 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 }
 
                 // Financial table
-                content = content.push(text("").size(8));
-                content = content.push(text("财务数据（最近4期）").size(16));
+                content = content.push(text("").size(4));
+                content = content.push(text("财务数据（最近4期）").size(16).style(style::palette::TEXT_PRIMARY));
                 content = content.push(
                     row![
-                        text("报告期").width(110),
-                        text("EPS").width(70),
-                        text("ROE").width(70),
-                        text("营收(亿)").width(90),
-                        text("净利(亿)").width(90),
-                        text("毛利率").width(80),
+                        text("报告期").width(110).style(style::palette::TEXT_SECONDARY),
+                        text("EPS").width(70).style(style::palette::TEXT_SECONDARY),
+                        text("ROE").width(70).style(style::palette::TEXT_SECONDARY),
+                        text("营收(亿)").width(90).style(style::palette::TEXT_SECONDARY),
+                        text("净利(亿)").width(90).style(style::palette::TEXT_SECONDARY),
+                        text("毛利率").width(80).style(style::palette::TEXT_SECONDARY),
                     ].spacing(4)
                 );
 
                 for report in state.financial_reports.iter().take(4) {
                     content = content.push(
                         row![
-                            text(report.report_date.format("%Y-%m").to_string()).width(110),
-                            text(report.eps.map(|v| format!("{:.2}", v)).unwrap_or("-".into())).width(70),
-                            text(report.roe.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(70),
-                            text(report.revenue.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90),
-                            text(report.net_profit.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90),
-                            text(report.gross_margin.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(80),
+                            text(report.report_date.format("%Y-%m").to_string()).width(110).style(style::palette::TEXT_PRIMARY),
+                            text(report.eps.map(|v| format!("{:.2}", v)).unwrap_or("-".into())).width(70).style(style::palette::TEXT_PRIMARY),
+                            text(report.roe.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(70).style(style::palette::TEXT_PRIMARY),
+                            text(report.revenue.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90).style(style::palette::TEXT_PRIMARY),
+                            text(report.net_profit.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90).style(style::palette::TEXT_PRIMARY),
+                            text(report.gross_margin.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(80).style(style::palette::TEXT_PRIMARY),
                         ].spacing(4)
                     );
                 }
 
                 // Detail Ratios
                 if let Some(latest) = state.financial_reports.first() {
-                    content = content.push(text("").size(8));
-                    content = content.push(text("详细指标").size(16));
+                    content = content.push(text("").size(4));
+                    content = content.push(text("详细指标").size(16).style(style::palette::TEXT_PRIMARY));
                     let ratios = FinancialAnalyzer::calculate_ratios(latest);
                     let details: Vec<(&str, Option<String>)> = vec![
                         ("净资产(亿)", latest.equity.map(|v| format!("{:.1}", v / 1e8))),
@@ -94,7 +94,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                         content = content.push(
                             row![
                                 text(*label).width(150).style(style::palette::TEXT_SECONDARY),
-                                text(value.as_deref().unwrap_or("-")).width(120),
+                                text(value.as_deref().unwrap_or("-")).width(120).style(style::palette::TEXT_PRIMARY),
                             ].spacing(8)
                         );
                     }
