@@ -9,48 +9,48 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
     // ── Header ──
     content = content.push(
-        text("设置").size(24.0).color(style::palette::TEXT_PRIMARY),
+        text("设置").size(24.0).color(style::colors().text_primary),
     );
     content = content.push(text("").size(4.0));
 
     // ── 数据源信息 ──
     content = content.push(
-        text("数据源配置").size(18.0).color(style::palette::TEXT_PRIMARY),
+        text("数据源配置").size(18.0).color(style::colors().text_primary),
     );
     content = content.push(
         text("当前数据源为 Tencent + EastMoney 双源 Fallback 模式")
-            .size(14.0).color(style::palette::TEXT_SECONDARY),
+            .size(14.0).color(style::colors().text_secondary),
     );
     content = content.push(
         text("• 日K线: 腾讯财经 (web.ifzq.gtimg.cn)")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
+            .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(
         text("• 搜索/基本面: 东方财富 (eastmoney.com)")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
+            .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(
         text("• 分时数据: 腾讯 + 东方财富 Fallback")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
+            .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(text("").size(8.0));
 
     // ── 外观设置 ──
     content = content.push(
-        text("外观设置").size(18.0).color(style::palette::TEXT_PRIMARY),
+        text("外观设置").size(18.0).color(style::colors().text_primary),
     );
     content = content.push(
         text(format!("当前主题: {}模式", state.theme_mode.label()))
-            .size(14.0).color(style::palette::TEXT_SECONDARY),
+            .size(14.0).color(style::colors().text_secondary),
     );
     let toggle_btn = button(
         text(if state.theme_mode == crate::ui::style::ThemeMode::Dark { "切换到亮色主题" } else { "切换到深色主题" })
-            .size(14.0).color(style::palette::TEXT_PRIMARY)
+            .size(14.0).color(style::colors().text_primary)
     )
         .on_press(Message::ToggleTheme)
         .padding(8)
         .style(|_: &iced::Theme, _: iced::widget::button::Status| iced::widget::button::Style {
-            background: Some(style::palette::ACCENT.into()),
+            background: Some(style::colors().accent.into()),
             text_color: Color::WHITE,
             ..Default::default()
         });
@@ -60,28 +60,28 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     // ── 缓存管理 ──
     let cache_info = format_cache_info(state);
     content = content.push(
-        text("缓存管理").size(18.0).color(style::palette::TEXT_PRIMARY),
+        text("缓存管理").size(18.0).color(style::colors().text_primary),
     );
     content = content.push(
-        text(cache_info).size(13.0).color(style::palette::TEXT_SECONDARY),
+        text(cache_info).size(13.0).color(style::colors().text_secondary),
     );
 
     // ── 关于 ──
     content = content.push(text("").size(16.0));
     content = content.push(
-        text("关于").size(18.0).color(style::palette::TEXT_PRIMARY),
+        text("关于").size(18.0).color(style::colors().text_primary),
     );
     content = content.push(
         text("Stock Vision v0.1.0 — A股行情分析与投资工具")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
+            .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(
         text("技术栈: Rust + Iced 0.14 + SQLite")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
+            .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(
         text("支持平台: Windows / macOS / Linux")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
+            .size(13.0).color(style::colors().text_secondary),
     );
 
     container(scrollable(content)).width(Fill).height(Fill).into()

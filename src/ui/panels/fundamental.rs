@@ -9,21 +9,21 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     match &state.selected_stock {
         None => {
             let content = column![
-                text("请搜索并选择一只股票").size(18.0).color(style::palette::TEXT_PRIMARY),
+                text("请搜索并选择一只股票").size(18.0).color(style::colors().text_primary),
                 text("搜索后点击「基本面分析」查看财务数据")
-                    .size(14.0).color(style::palette::TEXT_SECONDARY),
+                    .size(14.0).color(style::colors().text_secondary),
             ].spacing(8).padding(16);
             return container(content).width(Fill).height(Fill).into();
         }
         Some(code) => {
             let name = state.stock_name.as_deref().unwrap_or(code).to_string();
             let mut content = Column::new().spacing(6).padding(16);
-            content = content.push(text(format!("{}  {}", name, code)).size(22.0).color(style::palette::TEXT_PRIMARY));
+            content = content.push(text(format!("{}  {}", name, code)).size(22.0).color(style::colors().text_primary));
 
             if state.financial_reports.is_empty() {
                 content = content.push(
                     text("正在加载财务数据...")
-                        .size(14.0).color(style::palette::TEXT_SECONDARY),
+                        .size(14.0).color(style::colors().text_secondary),
                 );
             } else {
                 if let Some(health) = &state.financial_health {
@@ -33,11 +33,11 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     content = content.push(text("").size(4.0));
                     content = content.push(
                         row![
-                            text("财务健康评分").size(16.0).color(style::palette::TEXT_PRIMARY),
+                            text("财务健康评分").size(16.0).color(style::colors().text_primary),
                             text(format!("{} / 100", health.score)).size(24.0).color(score_color),
                         ].spacing(12)
                     );
-                    content = content.push(text(&health.summary).size(14.0).color(style::palette::TEXT_SECONDARY));
+                    content = content.push(text(&health.summary).size(14.0).color(style::colors().text_secondary));
                     for detail in &health.details {
                         content = content.push(
                             row![
@@ -48,32 +48,32 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     }
                 }
                 content = content.push(text("").size(4.0));
-                content = content.push(text("财务数据（最近4期）").size(16.0).color(style::palette::TEXT_PRIMARY));
+                content = content.push(text("财务数据（最近4期）").size(16.0).color(style::colors().text_primary));
                 content = content.push(
                     row![
-                        text("报告期").width(110).color(style::palette::TEXT_SECONDARY),
-                        text("EPS").width(70).color(style::palette::TEXT_SECONDARY),
-                        text("ROE").width(70).color(style::palette::TEXT_SECONDARY),
-                        text("营收(亿)").width(90).color(style::palette::TEXT_SECONDARY),
-                        text("净利(亿)").width(90).color(style::palette::TEXT_SECONDARY),
-                        text("毛利率").width(80).color(style::palette::TEXT_SECONDARY),
+                        text("报告期").width(110).color(style::colors().text_secondary),
+                        text("EPS").width(70).color(style::colors().text_secondary),
+                        text("ROE").width(70).color(style::colors().text_secondary),
+                        text("营收(亿)").width(90).color(style::colors().text_secondary),
+                        text("净利(亿)").width(90).color(style::colors().text_secondary),
+                        text("毛利率").width(80).color(style::colors().text_secondary),
                     ].spacing(4)
                 );
                 for report in state.financial_reports.iter().take(4) {
                     content = content.push(
                         row![
-                            text(report.report_date.format("%Y-%m").to_string()).width(110).color(style::palette::TEXT_PRIMARY),
-                            text(report.eps.map(|v| format!("{:.2}", v)).unwrap_or("-".into())).width(70).color(style::palette::TEXT_PRIMARY),
-                            text(report.roe.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(70).color(style::palette::TEXT_PRIMARY),
-                            text(report.revenue.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90).color(style::palette::TEXT_PRIMARY),
-                            text(report.net_profit.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90).color(style::palette::TEXT_PRIMARY),
-                            text(report.gross_margin.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(80).color(style::palette::TEXT_PRIMARY),
+                            text(report.report_date.format("%Y-%m").to_string()).width(110).color(style::colors().text_primary),
+                            text(report.eps.map(|v| format!("{:.2}", v)).unwrap_or("-".into())).width(70).color(style::colors().text_primary),
+                            text(report.roe.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(70).color(style::colors().text_primary),
+                            text(report.revenue.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90).color(style::colors().text_primary),
+                            text(report.net_profit.map(|v| format!("{:.1}", v / 1e8)).unwrap_or("-".into())).width(90).color(style::colors().text_primary),
+                            text(report.gross_margin.map(|v| format!("{:.1}%", v)).unwrap_or("-".into())).width(80).color(style::colors().text_primary),
                         ].spacing(4)
                     );
                 }
                 if let Some(latest) = state.financial_reports.first() {
                     content = content.push(text("").size(4.0));
-                    content = content.push(text("详细指标").size(16.0).color(style::palette::TEXT_PRIMARY));
+                    content = content.push(text("详细指标").size(16.0).color(style::colors().text_primary));
                     let ratios = FinancialAnalyzer::calculate_ratios(latest);
                     let details = vec![
                         ("净资产(亿)", latest.equity.map(|v| format!("{:.1}", v / 1e8))),
@@ -85,8 +85,8 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     for (label, value) in &details {
                         content = content.push(
                             row![
-                                text(label.to_string()).width(150).color(style::palette::TEXT_SECONDARY),
-                                text(value.as_deref().unwrap_or("-").to_string()).width(120).color(style::palette::TEXT_PRIMARY),
+                                text(label.to_string()).width(150).color(style::colors().text_secondary),
+                                text(value.as_deref().unwrap_or("-").to_string()).width(120).color(style::colors().text_primary),
                             ].spacing(8)
                         );
                     }

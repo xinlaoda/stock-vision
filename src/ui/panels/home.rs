@@ -118,7 +118,7 @@ fn index_card<'a>(
     chart_w: f32,
     chart_h: f32,
 ) -> Element<'a, Message> {
-    let ch_color = if idx.change >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+    let ch_color = if idx.change >= 0.0 { style::colors().rise } else { style::colors().fall };
     let arrow = if idx.change >= 0.0 { "▲" } else { "▼" };
     let sign = if idx.change >= 0.0 { "+" } else { "" };
 
@@ -131,7 +131,7 @@ fn index_card<'a>(
 
     let body = row(vec![
         column(vec![
-            text(name).size(18.0).color(style::palette::TEXT_PRIMARY).into(),
+            text(name).size(18.0).color(style::colors().text_primary).into(),
             text(format!("{:.2}", idx.price)).size(28.0).color(ch_color).into(),
             row(vec![
                 text(format!("{} {}{:.2}", arrow, sign, idx.change)).size(13.0).color(ch_color).into(),
@@ -147,7 +147,7 @@ fn index_card<'a>(
         .width(Fill)
         .padding(16)
         .style(|_: &Theme| iced::widget::container::Style {
-            background: Some(style::palette::BG_DARK.into()),
+            background: Some(style::colors().bg_dark.into()),
             border: iced::border::rounded(12),
             ..Default::default()
         })
@@ -168,10 +168,10 @@ pub fn view(state: &crate::state::AppState) -> Element<'_, Message> {
 
     let header = column![
         text("Stock Vision").size(32.0).color(Color::from_rgb(1.0, 0.65, 0.0)),
-        text("A股行情分析与投资工具").size(16.0).color(style::palette::TEXT_SECONDARY),
-        text(now_str).size(14.0).color(style::palette::TEXT_ACCENT),
+        text("A股行情分析与投资工具").size(16.0).color(style::colors().text_secondary),
+        text(now_str).size(14.0).color(style::colors().text_accent),
         text("").size(8.0),
-        text("市场概况").size(20.0).color(style::palette::TEXT_PRIMARY),
+        text("市场概况").size(20.0).color(style::colors().text_primary),
     ];
 
     let tips = [
@@ -183,10 +183,10 @@ pub fn view(state: &crate::state::AppState) -> Element<'_, Message> {
     ];
 
     let mut tip_col = column![
-        text("快速开始").size(20.0).color(style::palette::TEXT_PRIMARY),
+        text("快速开始").size(20.0).color(style::colors().text_primary),
     ];
     for tip in tips {
-        tip_col = tip_col.push(text(tip).size(14.0).color(style::palette::TEXT_SECONDARY));
+        tip_col = tip_col.push(text(tip).size(14.0).color(style::colors().text_secondary));
     }
 
     // 使用 responsive 实现自适应流式网格

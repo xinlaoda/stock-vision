@@ -10,15 +10,15 @@ use stock_vision_data_model::{IntradayPeriod, IntradayBar};
 
 fn inactive_btn_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
     |_t: &Theme, _s: Status| iced::widget::button::Style {
-        background: Some(style::palette::BG_LIGHT.into()),
-        text_color: style::palette::TEXT_SECONDARY,
+        background: Some(style::colors().bg_light.into()),
+        text_color: style::colors().text_secondary,
         ..Default::default()
     }
 }
 
 fn active_period_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
     |_t: &Theme, _s: Status| iced::widget::button::Style {
-        background: Some(style::palette::ACCENT.into()),
+        background: Some(style::colors().accent.into()),
         text_color: Color::WHITE,
         ..Default::default()
     }
@@ -26,7 +26,7 @@ fn active_period_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Sty
 
 fn active_range_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
     |_t: &Theme, _s: Status| iced::widget::button::Style {
-        background: Some(style::palette::ACCENT.into()),
+        background: Some(style::colors().accent.into()),
         text_color: Color::WHITE,
         ..Default::default()
     }
@@ -56,7 +56,7 @@ fn compute_ma(bars: &[stock_vision_data_model::DailyBar], period: usize) -> Opti
 fn ma_item(label: &str, value: Option<f64>, color: Color) -> Element<'_, Message> {
     row![
         text(label).size(10.0).color(color),
-        text(value.map_or("-".into(), |v| format!("{:.2}", v))).size(12.0).color(style::palette::TEXT_PRIMARY),
+        text(value.map_or("-".into(), |v| format!("{:.2}", v))).size(12.0).color(style::colors().text_primary),
     ].spacing(2).into()
 }
 
@@ -64,9 +64,9 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     match &state.selected_stock {
         None => {
             let content = column![
-                text("请搜索并选择一只股票").size(18.0).color(style::palette::TEXT_PRIMARY),
+                text("请搜索并选择一只股票").size(18.0).color(style::colors().text_primary),
                 text("在左侧搜索框输入股票名称或代码，点击搜索或回车查看K线")
-                    .size(14.0).color(style::palette::TEXT_SECONDARY),
+                    .size(14.0).color(style::colors().text_secondary),
             ].spacing(8).padding(16);
             return container(content).width(Fill).height(Fill).into();
         }
@@ -75,34 +75,34 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             let title = format!("{}  {}", state.stock_name.as_deref().unwrap_or(code), code);
             let title_elem = text(title).size(22.0).color(title_color);
 
-            let label_color = style::palette::TEXT_SECONDARY;
+            let label_color = style::colors().text_secondary;
             let price_summary: Element<'_, Message> = if !state.daily_bars.is_empty() {
                 let latest = &state.daily_bars[state.daily_bars.len() - 1];
                 let change_pct = (latest.close - latest.open) / latest.open * 100.0;
-                let change_color = if change_pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+                let change_color = if change_pct >= 0.0 { style::colors().rise } else { style::colors().fall };
                 row![
                     metric("最新价", format!("{:.2}", latest.close), 28.0, label_color, change_color),
                     metric("涨幅", format!("{:.2}%", change_pct), 18.0, label_color, change_color),
-                    metric("开盘", format!("{:.2}", latest.open), 18.0, label_color, style::palette::TEXT_PRIMARY),
-                    metric("最高", format!("{:.2}", latest.high), 18.0, label_color, style::palette::TEXT_PRIMARY),
-                    metric("最低", format!("{:.2}", latest.low), 18.0, label_color, style::palette::TEXT_PRIMARY),
-                    metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, label_color, style::palette::TEXT_PRIMARY),
+                    metric("开盘", format!("{:.2}", latest.open), 18.0, label_color, style::colors().text_primary),
+                    metric("最高", format!("{:.2}", latest.high), 18.0, label_color, style::colors().text_primary),
+                    metric("最低", format!("{:.2}", latest.low), 18.0, label_color, style::colors().text_primary),
+                    metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, label_color, style::colors().text_primary),
                 ].spacing(24).into()
             } else {
                 if state.intraday_period.is_some() && !state.intraday_bars.is_empty() {
                     let latest = &state.intraday_bars[state.intraday_bars.len() - 1];
                     let change_pct = (latest.close - latest.open) / latest.open * 100.0;
-                    let change_color = if change_pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+                    let change_color = if change_pct >= 0.0 { style::colors().rise } else { style::colors().fall };
                     row![
-                        metric("最新价", format!("{:.2}", latest.close), 28.0, style::palette::TEXT_SECONDARY, change_color),
-                        metric("涨幅", format!("{:.2}%", change_pct), 18.0, style::palette::TEXT_SECONDARY, change_color),
-                        metric("开盘", format!("{:.2}", latest.open), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
-                        metric("最高", format!("{:.2}", latest.high), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
-                        metric("最低", format!("{:.2}", latest.low), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
-                        metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
+                        metric("最新价", format!("{:.2}", latest.close), 28.0, style::colors().text_secondary, change_color),
+                        metric("涨幅", format!("{:.2}%", change_pct), 18.0, style::colors().text_secondary, change_color),
+                        metric("开盘", format!("{:.2}", latest.open), 18.0, style::colors().text_secondary, style::colors().text_primary),
+                        metric("最高", format!("{:.2}", latest.high), 18.0, style::colors().text_secondary, style::colors().text_primary),
+                        metric("最低", format!("{:.2}", latest.low), 18.0, style::colors().text_secondary, style::colors().text_primary),
+                        metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, style::colors().text_secondary, style::colors().text_primary),
                     ].spacing(24).into()
                 } else {
-                    text("正在加载数据...").size(14.0).color(style::palette::TEXT_SECONDARY).into()
+                    text("正在加载数据...").size(14.0).color(style::colors().text_secondary).into()
                 }
             };
 
@@ -142,17 +142,17 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 if idx < state.daily_bars.len() {
                     let bar = &state.daily_bars[idx];
                     let dt = bar.date.format("%Y-%m-%d").to_string();
-                    let clr = |pct: f64| if pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+                    let clr = |pct: f64| if pct >= 0.0 { style::colors().rise } else { style::colors().fall };
                     let day_change = (bar.close - bar.open) / bar.open * 100.0;
                     let vag = bar.volume as f64 / 10000.0;
                     row![
-                        text(dt).size(12.0).color(style::palette::TEXT_ACCENT),
-                        text(format!("开 {:.2}", bar.open)).size(12.0).color(style::palette::TEXT_PRIMARY),
-                        text(format!("高 {:.2}", bar.high)).size(12.0).color(style::palette::RISE),
-                        text(format!("低 {:.2}", bar.low)).size(12.0).color(style::palette::FALL),
-                        text(format!("收 {:.2}", bar.close)).size(12.0).color(style::palette::TEXT_PRIMARY),
+                        text(dt).size(12.0).color(style::colors().text_accent),
+                        text(format!("开 {:.2}", bar.open)).size(12.0).color(style::colors().text_primary),
+                        text(format!("高 {:.2}", bar.high)).size(12.0).color(style::colors().rise),
+                        text(format!("低 {:.2}", bar.low)).size(12.0).color(style::colors().fall),
+                        text(format!("收 {:.2}", bar.close)).size(12.0).color(style::colors().text_primary),
                         text(format!("{:.2}%", day_change)).size(12.0).color(clr(day_change)),
-                        text(format!("量 {:.0}万", vag)).size(12.0).color(style::palette::TEXT_SECONDARY),
+                        text(format!("量 {:.0}万", vag)).size(12.0).color(style::colors().text_secondary),
                     ].spacing(16).padding(4).into()
                 } else { text("").into() }
             } else { text("").into() };
@@ -181,7 +181,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 items.push(tool_btn(crate::state::DrawingToolMode::ParallelChannel, "平行通道").into());
                 items.push(button(text("清除").size(10.0)).on_press(Message::ClearDrawingLines).padding(3).style(inactive_btn_style()).into());
                 if !state.drawing_lines.is_empty() {
-                    items.push(text(format!("{}条", state.drawing_lines.len())).size(11.0).color(style::palette::TEXT_ACCENT).into());
+                    items.push(text(format!("{}条", state.drawing_lines.len())).size(11.0).color(style::colors().text_accent).into());
                 }
                 items.push(draw_hint);
                 row(items).spacing(4).into()

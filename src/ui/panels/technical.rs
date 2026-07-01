@@ -12,14 +12,14 @@ use iced::Theme;
 fn toggle_btn_style(active: bool) -> iced::widget::button::Style {
     if active {
         iced::widget::button::Style {
-            background: Some(style::palette::ACCENT.into()),
+            background: Some(style::colors().accent.into()),
             text_color: Color::WHITE,
             ..Default::default()
         }
     } else {
         iced::widget::button::Style {
-            background: Some(style::palette::BG_LIGHT.into()),
-            text_color: style::palette::TEXT_SECONDARY,
+            background: Some(style::colors().bg_light.into()),
+            text_color: style::colors().text_secondary,
             ..Default::default()
         }
     }
@@ -29,9 +29,9 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     match &state.selected_stock {
         None => {
             let content = column![
-                text("请搜索并选择一只股票").size(18.0).color(style::palette::TEXT_PRIMARY),
+                text("请搜索并选择一只股票").size(18.0).color(style::colors().text_primary),
                 text("搜索后点击「技术分析」查看技术指标")
-                    .size(14.0).color(style::palette::TEXT_SECONDARY),
+                    .size(14.0).color(style::colors().text_secondary),
             ].spacing(8).padding(16);
             return container(content).width(Fill).height(Fill).into();
         }
@@ -55,7 +55,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
             content = content.push(text("").size(4.0));
             content = content.push(
-                text("指标选择 (点击切换开/关)").size(16.0).color(style::palette::TEXT_PRIMARY),
+                text("指标选择 (点击切换开/关)").size(16.0).color(style::colors().text_primary),
             );
 
             let mut btn_row = row![].spacing(8);
@@ -75,12 +75,12 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
             // ── Active Indicator Status ──
             content = content.push(
-                text("当前激活的指标").size(16.0).color(style::palette::TEXT_PRIMARY),
+                text("当前激活的指标").size(16.0).color(style::colors().text_primary),
             );
 
             if state.active_indicators.is_empty() {
                 content = content.push(
-                    text("没有激活的指标").size(14.0).color(style::palette::TEXT_SECONDARY),
+                    text("没有激活的指标").size(14.0).color(style::colors().text_secondary),
                 );
             } else {
                 for indicator in &state.active_indicators {
@@ -90,7 +90,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                         format!("• {} — 显示在副图区域", indicator.label())
                     };
                     content = content.push(
-                        text(status_text).size(13.0).color(style::palette::TEXT_ACCENT),
+                        text(status_text).size(13.0).color(style::colors().text_accent),
                     );
                 }
             }
@@ -100,7 +100,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 content = content.push(text("").size(8.0));
                 content = content.push(render_divider());
                 content = content.push(
-                    text("当前技术指标值").size(16.0).color(style::palette::TEXT_PRIMARY),
+                    text("当前技术指标值").size(16.0).color(style::colors().text_primary),
                 );
 
                 for indicator in &state.active_indicators {
@@ -118,7 +118,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                             info.push_str(&format!("  {}={}", computed.line3_label, format_val(val3)));
                         }
                         content = content.push(
-                            text(info).size(13.0).color(style::palette::TEXT_PRIMARY),
+                            text(info).size(13.0).color(style::colors().text_primary),
                         );
                     }
                 }
@@ -128,13 +128,13 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             content = content.push(text("").size(8.0));
             content = content.push(render_divider());
             content = content.push(
-                text("参数配置 (点击数字调整)").size(16.0).color(style::palette::TEXT_PRIMARY),
+                text("参数配置 (点击数字调整)").size(16.0).color(style::colors().text_primary),
             );
 
             let p = &state.indicator_params;
 
             // MA Parameters
-            content = content.push(text("移动均线(MA)").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(text("移动均线(MA)").size(14.0).color(style::colors().text_accent));
             content = content.push(param_row("MA1周期", p.ma_periods[0], 2, 120, |v| Message::SetMAPeriod(0, v)));
             content = content.push(param_row("MA2周期", p.ma_periods[1], 2, 120, |v| Message::SetMAPeriod(1, v)));
             content = content.push(param_row("MA3周期", p.ma_periods[2], 2, 120, |v| Message::SetMAPeriod(2, v)));
@@ -143,27 +143,27 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
             // MACD Parameters
             content = content.push(text("").size(4.0));
-            content = content.push(text("MACD").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(text("MACD").size(14.0).color(style::colors().text_accent));
             content = content.push(param_row("快线(EMA)", p.macd_fast, 2, 60, |v| Message::SetMACDFast(v)));
             content = content.push(param_row("慢线(EMA)", p.macd_slow, 5, 120, |v| Message::SetMACDSlow(v)));
             content = content.push(param_row("信号(MA)", p.macd_signal, 2, 60, |v| Message::SetMACDSignal(v)));
 
             // BOLL Parameters
             content = content.push(text("").size(4.0));
-            content = content.push(text("布林带(BOLL)").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(text("布林带(BOLL)").size(14.0).color(style::colors().text_accent));
             content = content.push(param_row("周期", p.boll_period, 2, 120, |v| Message::SetBOLLPeriod(v)));
             content = content.push(param_row_f64("标准差", p.boll_std, 0.5, 5.0, 0.5, |v| Message::SetBOLLStd(v)));
 
             // KDJ Parameters
             content = content.push(text("").size(4.0));
-            content = content.push(text("KDJ").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(text("KDJ").size(14.0).color(style::colors().text_accent));
             content = content.push(param_row("RSV周期(N)", p.kdj_n, 2, 60, |v| Message::SetKDJ_N(v)));
             content = content.push(param_row("K平滑(M1)", p.kdj_m1, 2, 30, |v| Message::SetKDJ_M1(v)));
             content = content.push(param_row("D平滑(M2)", p.kdj_m2, 2, 30, |v| Message::SetKDJ_M2(v)));
 
             // RSI Parameters
             content = content.push(text("").size(4.0));
-            content = content.push(text("RSI").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(text("RSI").size(14.0).color(style::colors().text_accent));
             content = content.push(param_row("周期", p.rsi_period, 2, 60, |v| Message::SetRSIPeriod(v)));
 
 
@@ -171,7 +171,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             content = content.push(text("").size(12.0));
             content = content.push(render_divider());
             content = content.push(
-                text("说明").size(16.0).color(style::palette::TEXT_PRIMARY),
+                text("说明").size(16.0).color(style::colors().text_primary),
             );
             let descriptions = [
                 "• MACD: 趋势跟踪指标，显示DIF(白)、DEA(黄)线和MACD柱状图",
@@ -181,7 +181,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             ];
             for desc in &descriptions {
                 content = content.push(
-                    text(*desc).size(13.0).color(style::palette::TEXT_SECONDARY),
+                    text(*desc).size(13.0).color(style::colors().text_secondary),
                 );
             }
 
@@ -189,7 +189,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             content = content.push(text("").size(12.0));
             content = content.push(
                 text("👉 切换到「行情走势」页面查看指标在K线图上的显示效果")
-                    .size(14.0).color(style::palette::TEXT_ACCENT),
+                    .size(14.0).color(style::colors().text_accent),
             );
 
             container(scrollable(content)).width(Fill).height(Fill).into()
@@ -199,7 +199,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
 fn render_divider() -> Element<'static, Message> {
     container(text("")).width(Fill).height(1).style(|_: &Theme| iced::widget::container::Style {
-        background: Some(style::palette::BG_LIGHT.into()),
+        background: Some(style::colors().bg_light.into()),
         ..Default::default()
     }).into()
 }
@@ -215,11 +215,11 @@ fn param_row(label: &'static str, value: usize, min: usize, max: usize, msg: imp
         .on_press(msg((value + 1).min(max)))
         .padding(4).width(28);
     let val = container(
-        text(value.to_string()).size(14.0).color(style::palette::TEXT_PRIMARY)
+        text(value.to_string()).size(14.0).color(style::colors().text_primary)
     ).width(40).center_x(Fill);
     
     row![
-        text(label).size(13.0).color(style::palette::TEXT_SECONDARY).width(100),
+        text(label).size(13.0).color(style::colors().text_secondary).width(100),
         dec, val, inc,
     ].spacing(4).align_y(iced::alignment::Vertical::Center).into()
 }
@@ -235,11 +235,11 @@ fn param_row_f64(label: &'static str, value: f64, min: f64, max: f64, step: f64,
         .on_press(msg((value + step).min(max)))
         .padding(4).width(28);
     let val = container(
-        text(format!("{:.1}", value)).size(14.0).color(style::palette::TEXT_PRIMARY)
+        text(format!("{:.1}", value)).size(14.0).color(style::colors().text_primary)
     ).width(40).center_x(Fill);
     
     row![
-        text(label).size(13.0).color(style::palette::TEXT_SECONDARY).width(100),
+        text(label).size(13.0).color(style::colors().text_secondary).width(100),
         dec, val, inc,
     ].spacing(4).align_y(iced::alignment::Vertical::Center).into()
 }

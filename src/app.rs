@@ -381,6 +381,7 @@ impl StockVision {
                     crate::ui::style::ThemeMode::Dark => crate::ui::style::ThemeMode::Light,
                     crate::ui::style::ThemeMode::Light => crate::ui::style::ThemeMode::Dark,
                 };
+                crate::ui::style::set_current_theme(self.state.theme_mode);
                 Task::none()
             }
             Message::ExportCSV => {
@@ -486,6 +487,8 @@ impl StockVision {
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
+        let t = crate::ui::style::colors();
+        
         // Compact search bar
         let sr = row![
             text_input("搜索代码/名称", &self.state.search_keyword)
@@ -515,12 +518,12 @@ impl StockVision {
             let items: Vec<Element<Message>> = self.state.watchlist.iter().take(5).map(|stock| {
                 let st = stock.clone();
                 let lbl = format!("{}.{} {}", st.exchange.prefix(), st.code, st.name);
-                button(text(lbl).size(11.0).color(style::palette::TEXT_ACCENT))
+                button(text(lbl).size(11.0).color(t.text_accent))
                     .on_press(Message::SearchResultSelected(st.clone()))
                     .width(Fill).padding(3)
                     .style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style {
                         background: None,
-                        text_color: style::palette::TEXT_ACCENT,
+                        text_color: t.text_accent,
                         ..Default::default()
                     })
                     .into()
@@ -539,7 +542,7 @@ impl StockVision {
         // Browse history
         let history: Element<Message> = if !self.state.browse_history.is_empty() {
             let mut col = Column::new().spacing(2);
-            col = col.push(text("浏览记录").size(11.0).color(style::palette::TEXT_SECONDARY));
+            col = col.push(text("浏览记录").size(11.0).color(t.text_secondary));
             let items: Vec<Element<Message>> = self.state.browse_history.iter().take(15).map(|stock| {
                 let lbl = format!("{}.{}", stock.exchange.prefix(), stock.code);
                 let display = format!("{} ({})", stock.name, lbl);
@@ -547,8 +550,8 @@ impl StockVision {
                     .on_press(Message::SearchResultSelected(stock.clone()))
                     .width(Fill).padding(3)
                     .style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style {
-                        background: Some(style::palette::BG_MID.into()),
-                        text_color: style::palette::TEXT_PRIMARY,
+                        background: Some(t.bg_mid.into()),
+                        text_color: t.text_primary,
                         ..Default::default()
                     })
                     .into()
@@ -568,7 +571,7 @@ impl StockVision {
         )
             .width(220.0)
             .height(Fill)
-            .style(style::sidebar())
+            .style(style::sidebar(self.state.theme_mode))
             .into()
     }
 
@@ -584,7 +587,7 @@ impl StockVision {
         let ts = self.state.current_time.format("%Y-%m-%d %H:%M:%S").to_string();
         let clock = row![text("").width(Fill), text(ts).size(13.0)].padding(8);
         container(column![clock, content].width(Fill).height(Fill))
-            .width(Fill).height(Fill).style(style::panel()).into()
+            .width(Fill).height(Fill).style(style::panel(self.state.theme_mode)).into()
     }
 }
 
