@@ -1,4 +1,4 @@
-use iced::{Application, Settings, Size};
+use iced::{Application, Font, Settings, Size};
 
 mod app;
 mod services;
@@ -16,6 +16,9 @@ fn main() -> iced::Result {
         .init();
 
     StockVisionApp::run(Settings {
+        // Use a CJK-capable system font so Chinese text renders instead of tofu boxes.
+        // "Microsoft YaHei" ships with Windows; cosmic-text loads it from the system font source.
+        default_font: Font::with_name("Microsoft YaHei"),
         window: iced::window::Settings {
             size: Size::new(1280.0, 800.0),
             min_size: Some(Size::new(900.0, 600.0)),
