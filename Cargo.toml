@@ -6,11 +6,7 @@ description = "A cross-platform desktop stock analysis application for A-share m
 
 [dependencies]
 # GUI
-iced = { version = "0.12", features = ["tokio", "svg", "image", "advanced", "canvas"] }
-
-# Charting
-plotters = "0.3"
-plotters-iced = "0.10"
+iced = { version = "0.14", features = ["tokio", "canvas"] }
 
 # HTTP & Data
 reqwest = { version = "0.12", features = ["json"] }
@@ -33,6 +29,10 @@ anyhow = "1"
 thiserror = "2"
 directories-next = "2"
 
+# Charting (currently using native iced canvas, plotters optional)
+plotters = "0.3"
+plotters-iced = "0.11"
+
 # Local crates
 stock-vision-data-source = { path = "crates/data-source" }
 stock-vision-data-model = { path = "crates/data-model" }
@@ -45,10 +45,3 @@ stock-vision-storage = { path = "crates/storage" }
 codegen-units = 1
 lto = true
 strip = true
-
-[features]
-# Phase 1 features
-fundamental = []
-technical = []
-backtesting = []
-all = ["fundamental", "technical", "backtesting"]
