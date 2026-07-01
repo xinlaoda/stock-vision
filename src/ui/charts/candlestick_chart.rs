@@ -410,6 +410,25 @@ impl Program<crate::app::Message> for CandlestickCanvas {
         self.draw_ma_line(&mut frame, &self.ma10, sg, Color::from_rgb(0.3, 0.7, 1.0), sx, sp, bw, &ma_to_px);
         self.draw_ma_line(&mut frame, &self.ma20, sg, Color::from_rgb(1.0, 0.4, 0.7), sx, sp, bw, &ma_to_px);
         self.draw_ma_line(&mut frame, &self.ma60, sg, Color::from_rgb(0.2, 0.8, 0.4), sx, sp, bw, &ma_to_px);
+        // MA labels (top-left of chart area)
+        let mut ma_labels = Vec::new();
+        if let Some(v) = self.ma5.last().and_then(|x| *x) { ma_labels.push(("MA5", v, Color::from_rgb(1.0, 0.8, 0.0))); }
+        if let Some(v) = self.ma10.last().and_then(|x| *x) { ma_labels.push(("MA10", v, Color::from_rgb(0.3, 0.7, 1.0))); }
+        if let Some(v) = self.ma20.last().and_then(|x| *x) { ma_labels.push(("MA20", v, Color::from_rgb(1.0, 0.4, 0.7))); }
+        if let Some(v) = self.ma60.last().and_then(|x| *x) { ma_labels.push(("MA60", v, Color::from_rgb(0.2, 0.8, 0.4))); }
+        let mut label_x = sx + 5.0;
+        for (name, val, color) in &ma_labels {
+            let text_str = format!("{}:{:.2}", name, val);
+            let text_w = text_str.len() as f32 * 6.5;
+            frame.fill_text(canvas::Text {
+                content: text_str,
+                position: Point::new(label_x, kl.top + 2.0),
+                color: *color,
+                size: iced::Pixels(10.0),
+                ..Default::default()
+            });
+            label_x += text_w + 8.0;
+        }
 
         // ── BOLL Bands ──
         if !self.boll_upper.is_empty() {
@@ -433,6 +452,24 @@ impl Program<crate::app::Message> for CandlestickCanvas {
             self.draw_indicator_line(&mut frame, &self.boll_upper, sg, boll_up_color, sx, sp, bw, &k_mp);
             self.draw_indicator_line(&mut frame, &self.boll_middle, sg, boll_mid_color, sx, sp, bw, &k_mp);
             self.draw_indicator_line(&mut frame, &self.boll_lower, sg, boll_lo_color, sx, sp, bw, &k_mp);
+            // BOLL labels
+            let mut boll_label_x = sx + 5.0;
+            if let Some(up) = self.boll_upper.last().and_then(|x| *x) {
+                let txt = format!("BOLL上:{:.2}", up);
+                let tw = txt.len() as f32 * 6.0;
+                frame.fill_text(canvas::Text { content: txt, position: Point::new(boll_label_x, kl.top + 14.0), color: boll_up_color, size: iced::Pixels(9.0), ..Default::default() });
+                boll_label_x += tw + 4.0;
+            }
+            if let Some(mid) = self.boll_middle.last().and_then(|x| *x) {
+                let txt = format!("中:{:.2}", mid);
+                let tw = txt.len() as f32 * 6.0;
+                frame.fill_text(canvas::Text { content: txt, position: Point::new(boll_label_x, kl.top + 14.0), color: boll_mid_color, size: iced::Pixels(9.0), ..Default::default() });
+                boll_label_x += tw + 4.0;
+            }
+            if let Some(lo) = self.boll_lower.last().and_then(|x| *x) {
+                let txt = format!("下:{:.2}", lo);
+                frame.fill_text(canvas::Text { content: txt, position: Point::new(boll_label_x, kl.top + 14.0), color: boll_lo_color, size: iced::Pixels(9.0), ..Default::default() });
+            }
         }
 
         // ── Y-axis price labels ──
@@ -452,7 +489,19 @@ impl Program<crate::app::Message> for CandlestickCanvas {
             let vw = (sp * 0.6).max(1.0);
             frame.fill_rectangle(Point::new(x, vl.bottom - vol_h), Size::new(vw, vol_h.max(1.0)), vc);
         }
-        // Volume MA5
+        // Volume MA5 label
+        if sg < self.vol_ma5.len() {
+            if let Some(v) = self.vol_ma5.last().and_then(|x| *x) {
+                let txt = format!("MA5:{:.0}", v);
+                frame.fill_text(canvas::Text {
+                    content: txt,
+                    position: Point::new(sx + 40.0, vl.top + 3.0),
+                    color: Color::from_rgba(1.0, 1.0, 0.6, 0.8),
+                    size: iced::Pixels(9.0),
+                    ..Default::default()
+                });
+            }
+        }
         if sg < self.vol_ma5.len() {
             let mut pts: Vec<(f32, f32)> = Vec::new();
             for (i, bar) in bars.iter().enumerate() {
@@ -463,6 +512,11 @@ impl Program<crate::app::Message> for CandlestickCanvas {
             for w in pts.windows(2) {
                 frame.stroke(&Path::line(Point::new(w[0].0, w[0].1), Point::new(w[1].0, w[1].1)),
                     canvas::Stroke::default().with_color(Color::from_rgba(1.0, 1.0, 0.6, 0.8)).with_width(1.5));
+            }
+        }
+        if sg < self.vol_ma5.len() {
+            if let Some(v) = self.vol_ma5.last().or(None) {
+                let _ = v;
             }
         }
         frame.fill_text(canvas::Text {

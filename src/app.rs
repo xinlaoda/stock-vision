@@ -251,8 +251,9 @@ impl StockVision {
                 Task::none()
             }
             Message::PanBy(dx) => { 
+                let max_offset = self.state.daily_bars.len().saturating_sub(self.state.zoom_level);
                 let new_off = (self.state.pan_offset as f32 - dx).max(0.0) as usize;
-                self.state.pan_offset = new_off.min(self.state.daily_bars.len().saturating_sub(self.state.zoom_level));
+                self.state.pan_offset = new_off.min(max_offset);
                 Task::none() 
             }
             Message::Error(_) => Task::none(),
@@ -266,62 +267,66 @@ impl StockVision {
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
+        // Compact search bar
         let sr = row![
-            text_input("输入代码(如000001)或名称", &self.state.search_keyword)
+            text_input("搜索代码/名称", &self.state.search_keyword)
                 .on_input(Message::SearchInputChanged)
                 .on_submit(Message::SearchSubmitted)
-                .padding(8).size(13.0),
-            button(text("搜索").size(12.0)).on_press(Message::SearchSubmitted).padding(8),
-        ].spacing(6).align_y(alignment::Vertical::Center);
+                .padding(6).size(13.0),
+            button(text("搜索").size(12.0)).on_press(Message::SearchSubmitted).padding(6),
+        ].spacing(4).align_y(alignment::Vertical::Center);
 
         let search_res: Element<Message> = if !self.state.search_results.is_empty() {
             let list: Vec<Element<Message>> = self.state.search_results.iter().map(|s| {
                 let lbl = format!("{}.{}  {}", s.exchange.prefix(), s.code, s.name);
-                button(text(lbl).size(13.0))
+                button(text(lbl).size(12.0))
                     .on_press(Message::SearchResultSelected(s.clone()))
-                    .width(Fill).padding(6).into()
+                    .width(Fill).padding(4).into()
             }).collect();
-            column(list).spacing(2).into()
+            column(list).spacing(1).into()
         } else { text("").into() };
 
-        let indicator: Element<Message> = match &self.state.stock_name {
-            Some(name) => {
-                let in_wl = self.state.selected_stock.as_ref().map_or(false, |c| self.state.watchlist.iter().any(|s| &s.code == c));
-                row![
-                    text(format!("当前: {}", name)).size(12.0),
-                    if in_wl { text(" ★").size(12.0) } else { text("") },
-                ].spacing(4).into()
-            }
-            None => text("").into(),
-        };
+        // Navigation buttons (compact)
+        let mut nav = Column::new().spacing(2);
+        nav = nav.push(nav_btn("🏠", "首页", Panel::Home));
+        nav = nav.push(nav_btn("📊", "自选股", Panel::Watchlist));
 
-        let add_btn: Element<Message> = {
-            let has = self.state.selected_stock.is_some();
-            let already = self.state.selected_stock.as_ref().map_or(false, |c| self.state.watchlist.iter().any(|s| &s.code == c));
-            if has && !already {
-                button(text("+ 加入自选").size(12.0)).on_press(Message::AddToWatchlist).padding(6).width(Fill).into()
-            } else { text("").into() }
-        };
+        // Top 5 watchlist quick-nav (between 自选股 and 行情走势)
+        let top_watch: Element<Message> = if !self.state.watchlist.is_empty() {
+            let items: Vec<Element<Message>> = self.state.watchlist.iter().take(5).map(|stock| {
+                let st = stock.clone();
+                let lbl = format!("{}.{} {}", st.exchange.prefix(), st.code, st.name);
+                button(text(lbl).size(11.0).color(style::palette::TEXT_ACCENT))
+                    .on_press(Message::SearchResultSelected(st.clone()))
+                    .width(Fill).padding(3)
+                    .style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style {
+                        background: None,
+                        text_color: style::palette::TEXT_ACCENT,
+                        ..Default::default()
+                    })
+                    .into()
+            }).collect();
+            let mut col = column![].spacing(1).padding([2, 8]);
+            for item in items { col = col.push(item); }
+            col.into()
+        } else { text("").into() };
+        nav = nav.push(top_watch);
 
-        let nav = Column::new()
-            .push(nav_btn("🏠", "首页", Panel::Home))
-            .push(nav_btn("📊", "自选股", Panel::Watchlist))
-            .push(nav_btn("📈", "行情走势", Panel::Chart))
-            .push(nav_btn("📋", "基本面分析", Panel::Fundamental))
-            .push(nav_btn("📐", "技术分析", Panel::Technical))
-            .push(nav_btn("⚙", "设置", Panel::Settings))
-            .spacing(4);
+        nav = nav.push(nav_btn("📈", "行情走势", Panel::Chart));
+        nav = nav.push(nav_btn("📋", "基本面", Panel::Fundamental));
+        nav = nav.push(nav_btn("📐", "技术分析", Panel::Technical));
+        nav = nav.push(nav_btn("⚙", "设置", Panel::Settings));
 
         // Browse history
         let history: Element<Message> = if !self.state.browse_history.is_empty() {
             let mut col = Column::new().spacing(2);
-            col = col.push(text("浏览记录").size(12.0).color(style::palette::TEXT_SECONDARY));
-            let items: Vec<Element<Message>> = self.state.browse_history.iter().take(10).map(|stock| {
+            col = col.push(text("浏览记录").size(11.0).color(style::palette::TEXT_SECONDARY));
+            let items: Vec<Element<Message>> = self.state.browse_history.iter().take(15).map(|stock| {
                 let lbl = format!("{}.{}", stock.exchange.prefix(), stock.code);
                 let display = format!("{} ({})", stock.name, lbl);
-                button(text(display).size(11.0))
+                button(text(display).size(10.0))
                     .on_press(Message::SearchResultSelected(stock.clone()))
-                    .width(iced::Fill).padding(4)
+                    .width(Fill).padding(3)
                     .style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style {
                         background: Some(style::palette::BG_MID.into()),
                         text_color: style::palette::TEXT_PRIMARY,
@@ -329,21 +334,23 @@ impl StockVision {
                     })
                     .into()
             }).collect();
-            for item in items {
-                col = col.push(item);
-            }
+            for item in items { col = col.push(item); }
             col.into()
         } else { text("").into() };
 
         container(
             Column::new()
-                .push(text("Stock Vision").size(20.0))
-                .push(text("").size(4.0))
-                .push(sr).push(search_res).push(indicator).push(add_btn)
-                .push(text("").size(8.0)).push(nav)
-                .push(text("").size(8.0)).push(history)
-                .spacing(6).padding(16),
-        ).width(220).height(Fill).style(style::sidebar()).into()
+                .push(text("Stock Vision").size(18.0))
+                .push(text("").size(2.0))
+                .push(sr).push(search_res)
+                .push(text("").size(4.0)).push(nav)
+                .push(text("").size(4.0)).push(history)
+                .spacing(2).padding([6, 4])
+        )
+            .width(220.0)
+            .height(Fill)
+            .style(style::sidebar())
+            .into()
     }
 
     fn view_main_content(&self) -> Element<'_, Message> {
