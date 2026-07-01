@@ -252,8 +252,10 @@ impl CandlestickCanvas {
         let macd = self.section(MACD_RATIO, total_h, volume.bottom);
 
         let total = self.bars.len();
-        let end = total.saturating_sub(self.scroll_offset);
-        let start_global = end.saturating_sub(self.visible_count);
+        // Safety: clamp scroll_offset so we never go past the data
+        let safe_scroll = self.scroll_offset.min(total.saturating_sub(self.visible_count.min(total)));
+        let end = total.saturating_sub(safe_scroll);
+        let start_global = end.saturating_sub(self.visible_count.min(end));
 
         Layout {
             start_x: CHART_START_X, total_width, spacing, bar_width, start_global,
@@ -266,9 +268,9 @@ impl CandlestickCanvas {
     fn get_visible_bars(&self) -> &[DailyBar] {
         let total = self.bars.len();
         if total == 0 { return &[]; }
-        let end = total.saturating_sub(self.scroll_offset);
-        let start = end.saturating_sub(self.visible_count);
-        if start >= end { return &[]; }
+        let safe_scroll = self.scroll_offset.min(total.saturating_sub(self.visible_count.min(total)));
+        let end = total.saturating_sub(safe_scroll);
+        let start = end.saturating_sub(self.visible_count.min(end));
         &self.bars[start..end]
     }
 
@@ -337,8 +339,9 @@ impl CandlestickCanvas {
     /// Helper: compute visible bar info
     fn get_visible_start(&self) -> usize {
         let total = self.bars.len();
-        let end = total.saturating_sub(self.scroll_offset);
-        end.saturating_sub(self.visible_count)
+        let safe_scroll = self.scroll_offset.min(total.saturating_sub(self.visible_count.min(total)));
+        let end = total.saturating_sub(safe_scroll);
+        end.saturating_sub(self.visible_count.min(end))
     }
 }
 
@@ -632,6 +635,8 @@ impl Program<crate::app::Message> for CandlestickCanvas {
     fn update(&self, _state: &mut Self::State, event: &canvas::Event, bounds: Rectangle, cursor: iced::mouse::Cursor) -> Option<canvas::Action<crate::app::Message>> {
         match event {
             canvas::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
+                // Don't zoom while dragging
+                if _state.drag_start_x.is_some() { return None; }
                 if let Some(pos) = cursor.position_over(bounds) {
                     if pos.x >= bounds.x && pos.x <= bounds.x + bounds.width && pos.y >= bounds.y && pos.y <= bounds.y + bounds.height {
                         let sa = match delta { iced::mouse::ScrollDelta::Lines { y, .. } => *y, iced::mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0 };

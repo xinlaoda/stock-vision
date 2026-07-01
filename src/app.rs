@@ -265,9 +265,14 @@ impl StockVision {
                 Task::none()
             }
             Message::PanBy(dx) => { 
-                let max_offset = self.state.daily_bars.len().saturating_sub(self.state.zoom_level);
-                let new_off = (self.state.pan_offset as f32 - dx).max(0.0) as usize;
-                self.state.pan_offset = new_off.min(max_offset);
+                // Drag horizontally: positive dx = drag left = show earlier data
+                // Negative dx = drag right = show later data
+                let total = self.state.daily_bars.len();
+                let max_offset = total.saturating_sub(self.state.zoom_level);
+                let min_offset: usize = 0;
+                let new_off = (self.state.pan_offset as f32 - dx).round() as i64;
+                let clamped = new_off.clamp(min_offset as i64, max_offset as i64) as usize;
+                self.state.pan_offset = clamped;
                 Task::none() 
             }
             Message::Error(_) => Task::none(),
