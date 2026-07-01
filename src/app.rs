@@ -1,7 +1,6 @@
 use iced::widget::{button, column, container, row, text, text_input, Column};
 use iced::{Alignment, Application, Color, Command, Element, Font, Length};
 
-/// Emoji font for Windows (Segoe UI Emoji), Linux fallback
 pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji");
 
 use stock_vision_data_model::*;
@@ -68,14 +67,21 @@ impl Application for StockVisionApp {
                 Command::none()
             }
             Message::SearchSubmitted => {
-                let keyword = self.state.search_keyword.clone();
-                if keyword.trim().is_empty() {
+                let raw = self.state.search_keyword.clone();
+                let keyword = raw.trim().to_string();
+                if keyword.is_empty() {
                     return Command::none();
                 }
+                // Strip sz/sh/bj prefix if present, e.g. "sz000001" -> "000001"
+                let cleaned = keyword
+                    .trim_start_matches(|c: char| c.is_alphabetic())
+                    .to_string();
+                let search_term = if cleaned.is_empty() { keyword } else { cleaned };
+
                 let source = self.search_source.clone();
                 self.state.search_results.clear();
                 Command::perform(
-                    async move { source.search_stocks(&keyword).await.unwrap_or_default() },
+                    async move { source.search_stocks(&search_term).await.unwrap_or_default() },
                     Message::SearchResultsLoaded,
                 )
             }
@@ -174,9 +180,9 @@ impl Application for StockVisionApp {
 
 impl StockVisionApp {
     fn view_sidebar(&self) -> Element<Message> {
-        // ── Search input + button row ──
+        // ── Search input + button ──
         let search_row = row![
-            text_input("输入代码或名称，回车搜索", &self.state.search_keyword)
+            text_input("输入代码(如000001)或名称", &self.state.search_keyword)
                 .on_input(Message::SearchInputChanged)
                 .on_submit(Message::SearchSubmitted)
                 .padding(8)
@@ -226,7 +232,7 @@ impl StockVisionApp {
 
         container(
             Column::new()
-                .push(text("Stock Vision").size(20).style(iced::Color::from_rgb(0.9, 0.5, 0.1)))
+                .push(text("Stock Vision").size(20).style(Color::from_rgb(0.9, 0.5, 0.1)))
                 .push(text("").size(4))
                 .push(search_row)
                 .push(search_results)
@@ -257,8 +263,11 @@ impl StockVisionApp {
     }
 }
 
-/// Navigation button with emoji icon + label
-fn nav_button(icon: &'static str, label: &'static str, panel: Panel) -> iced::widget::Button<'static, Message> {
+fn nav_button(
+    icon: &'static str,
+    label: &'static str,
+    panel: Panel,
+) -> iced::widget::Button<'static, Message> {
     let content = row![
         text(icon).font(EMOJI_FONT).size(15),
         text(label).size(15),
