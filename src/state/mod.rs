@@ -120,6 +120,7 @@ pub struct AppState {
     pub kline_period: KlinePeriod,
     pub time_range: TimeRange,
     pub zoom_level: usize,
+    pub pan_offset: usize,
 
     // Watchlist
     pub watchlist: Vec<Stock>,
@@ -161,6 +162,7 @@ impl AppState {
             kline_period: KlinePeriod::Daily,
             time_range: TimeRange::OneYear,
             zoom_level: 60,
+            pan_offset: 0,
             watchlist: Vec::new(),
             active_panel: Panel::default(),
             current_time: Utc::now(),

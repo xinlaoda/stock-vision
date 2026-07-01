@@ -7,7 +7,6 @@ use iced::{Color, Element, Fill};
 use iced::widget::button::Status;
 use iced::Theme;
 
-/// Style for inactive buttons — visible text on dark bg
 fn inactive_btn_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
     |_t: &Theme, _s: Status| iced::widget::button::Style {
         background: Some(style::palette::BG_LIGHT.into()),
@@ -16,7 +15,6 @@ fn inactive_btn_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Styl
     }
 }
 
-/// Style for active period/range button
 fn active_period_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
     |_t: &Theme, _s: Status| iced::widget::button::Style {
         background: Some(style::palette::ACCENT.into()),
@@ -37,22 +35,28 @@ fn make_period_btn(label: &'static str, period: KlinePeriod, is_active: bool) ->
     let btn = button(text(label).size(13.0))
         .on_press(Message::SetKlinePeriod(period))
         .padding(4);
-    if is_active {
-        btn.style(active_period_style())
-    } else {
-        btn.style(inactive_btn_style())
-    }
+    if is_active { btn.style(active_period_style()) } else { btn.style(inactive_btn_style()) }
 }
 
 fn make_range_btn(label: &'static str, range: TimeRange, is_active: bool) -> iced::widget::Button<'static, Message> {
     let btn = button(text(label).size(12.0))
         .on_press(Message::SetTimeRange(range))
         .padding(4);
-    if is_active {
-        btn.style(active_range_style())
-    } else {
-        btn.style(inactive_btn_style())
-    }
+    if is_active { btn.style(active_range_style()) } else { btn.style(inactive_btn_style()) }
+}
+
+fn compute_ma(bars: &[stock_vision_data_model::DailyBar], period: usize) -> Option<f64> {
+    if bars.len() < period { return None; }
+    let start = bars.len() - period;
+    let sum: f64 = bars[start..].iter().map(|b| b.close).sum();
+    Some(sum / period as f64)
+}
+
+fn ma_item(label: &str, value: Option<f64>, color: Color) -> Element<'_, Message> {
+    row![
+        text(label).size(10.0).color(color),
+        text(value.map_or("-".into(), |v| format!("{:.2}", v))).size(12.0).color(style::palette::TEXT_PRIMARY),
+    ].spacing(2).into()
 }
 
 pub fn view(state: &AppState) -> Element<'_, Message> {
@@ -66,12 +70,10 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             return container(content).width(Fill).height(Fill).into();
         }
         Some(code) => {
-            // ── Title (bright orange) ──
             let title_color = Color::from_rgb(1.0, 0.65, 0.0);
             let title = format!("{}  {}", state.stock_name.as_deref().unwrap_or(code), code);
             let title_elem = text(title).size(22.0).color(title_color);
 
-            // ── Price summary with visible label colors ──
             let label_color = style::palette::TEXT_SECONDARY;
             let price_summary: Element<'_, Message> = if !state.daily_bars.is_empty() {
                 let latest = &state.daily_bars[state.daily_bars.len() - 1];
@@ -89,6 +91,17 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 text("正在加载数据...").size(14.0).color(style::palette::TEXT_SECONDARY).into()
             };
 
+            // ── MA Legend ──
+            let ma_legend: Element<'_, Message> = if !state.daily_bars.is_empty() {
+                let bars = &state.daily_bars;
+                row![
+                    ma_item("MA5", compute_ma(bars, 5), Color::from_rgb(1.0, 0.8, 0.0)),
+                    ma_item("MA10", compute_ma(bars, 10), Color::from_rgb(0.3, 0.7, 1.0)),
+                    ma_item("MA20", compute_ma(bars, 20), Color::from_rgb(1.0, 0.4, 0.7)),
+                    ma_item("MA60", compute_ma(bars, 60), Color::from_rgb(0.2, 0.8, 0.4)),
+                ].spacing(8).into()
+            } else { text("").into() };
+
             // ── Period selector ──
             let period_row: Element<'_, Message> = row(vec![
                 make_period_btn("日K", KlinePeriod::Daily, state.kline_period == KlinePeriod::Daily).into(),
@@ -102,14 +115,14 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 make_range_btn("1月", TimeRange::OneMonth, state.time_range == TimeRange::OneMonth).into(),
                 make_range_btn("3月", TimeRange::ThreeMonths, state.time_range == TimeRange::ThreeMonths).into(),
                 make_range_btn("6月", TimeRange::SixMonths, state.time_range == TimeRange::SixMonths).into(),
+                make_range_btn("年初", TimeRange::YearToDate, state.time_range == TimeRange::YearToDate).into(),
                 make_range_btn("1年", TimeRange::OneYear, state.time_range == TimeRange::OneYear).into(),
                 make_range_btn("2年", TimeRange::TwoYears, state.time_range == TimeRange::TwoYears).into(),
                 make_range_btn("5年", TimeRange::FiveYears, state.time_range == TimeRange::FiveYears).into(),
-                make_range_btn("年初", TimeRange::YearToDate, state.time_range == TimeRange::YearToDate).into(),
                 make_range_btn("全部", TimeRange::Max, state.time_range == TimeRange::Max).into(),
             ]).spacing(4).into();
 
-            // ── Hover tooltip bar info (if crosshair active) ──
+            // ── Hover tooltip ──
             let tooltip_row: Element<'_, Message> = if let Some(idx) = state.hovered_bar_index {
                 if idx < state.daily_bars.len() {
                     let bar = &state.daily_bars[idx];
@@ -129,12 +142,12 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 } else { text("").into() }
             } else { text("").into() };
 
-            // ── Chart (receives hovered index for crosshair) ──
+            // ── Chart ──
             let chart_element: Element<'static, Message> = if !state.daily_bars.is_empty() {
                 let filtered = filter_bars(&state.daily_bars, state.time_range);
                 let period = state.kline_period;
                 let aggregated = aggregate_bars(&filtered, period);
-                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index).into_element()
+                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset).into_element()
             } else {
                 text("").into()
             };
@@ -142,6 +155,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             let content = column![
                 title_elem,
                 price_summary,
+                ma_legend,
                 text("").size(4.0),
                 period_row,
                 range_row,
@@ -162,7 +176,6 @@ fn metric(label: &str, value: String, size: f32, label_color: Color, value_color
     ].into()
 }
 
-/// Filter bars based on time range
 fn filter_bars(bars: &[stock_vision_data_model::DailyBar], range: TimeRange) -> Vec<stock_vision_data_model::DailyBar> {
     if range == TimeRange::Max {
         return bars.to_vec();
@@ -171,7 +184,6 @@ fn filter_bars(bars: &[stock_vision_data_model::DailyBar], range: TimeRange) -> 
     bars.iter().filter(|b| b.date >= cutoff).cloned().collect()
 }
 
-/// Aggregate daily bars into weekly/monthly/yearly
 fn aggregate_bars(bars: &[stock_vision_data_model::DailyBar], period: KlinePeriod) -> Vec<stock_vision_data_model::DailyBar> {
     if period == KlinePeriod::Daily {
         return bars.to_vec();
