@@ -139,4 +139,84 @@ impl DataSource for TencentSource {
             dividend_yield: None,
         })
     }
+
+    /// Tencent intraday K-line via the "min" endpoint.
+    /// URL format: https://web.ifzq.gtimg.cn/appstock/app/kline/mkline?param=sh000001,m,day,,,60
+    /// The "day" in the URL is the ktype (1min, 5min, 15min, 30min, 60min are mapped via
+    /// the IntradayPeriod.tencent_param()).
+    /// We can also use the mkline endpoint.
+    async fn get_intraday_bars(
+        &self,
+        code: &str,
+        exchange: Exchange,
+        period: IntradayPeriod,
+    ) -> Result<Vec<IntradayBar>, DataSourceError> {
+        let tcode = Self::tencent_code(code, &exchange);
+        let ktype = period.tencent_param();
+
+        // For intraday, use the mkline endpoint which returns min-level data
+        let url = format!(
+            "https://web.ifzq.gtimg.cn/appstock/app/kline/mkline?param={},m,{}",
+            tcode, ktype,
+        );
+
+        info!("Fetching Tencent intraday: {} {} {}", tcode, ktype, url);
+
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| DataSourceError::ApiError(format!("HTTP error: {}", e)))?;
+        let text = resp.text().await
+            .map_err(|e| DataSourceError::ParseError(format!("Read error: {}", e)))?;
+
+        let json: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| DataSourceError::ParseError(format!("JSON error: {}", e)))?;
+
+        // Navigate: data -> stock_code -> m -> ktype -> array
+        let bars = json["data"][&tcode]["m"][&ktype]
+            .as_array()
+            .ok_or_else(|| DataSourceError::ParseError("No intraday data array".to_string()))?;
+
+        let parsed: Vec<IntradayBar> = bars.iter()
+            .filter_map(|item| {
+                let arr = item.as_array()?;
+                let datetime_str = arr.get(0)?.as_str()?; // "20260701 09:31"
+                let open = arr.get(1)?.as_str()?.parse::<f64>().ok()?;
+                let close = arr.get(2)?.as_str()?.parse::<f64>().ok()?;
+                let high = arr.get(3)?.as_str()?.parse::<f64>().ok()?;
+                let low = arr.get(4)?.as_str()?.parse::<f64>().ok()?;
+                let volume = arr.get(5)?.as_str()?.parse::<f64>().ok()?;
+                // amount might be at index 6 or concatenated differently
+                let amount = arr.get(6).and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(0.0);
+
+                // Normalize datetime string
+                // "20260701 09:31" -> "2026-07-01 09:31"
+                let datetime = if datetime_str.len() >= 15 {
+                    let mut s = datetime_str.to_string();
+                    s.insert(4, '-');
+                    s.insert(7, '-');
+                    s
+                } else {
+                    datetime_str.to_string()
+                };
+
+                Some(IntradayBar {
+                    code: code.to_string(),
+                    datetime,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume: volume * 100.0,
+                    amount,
+                })
+            })
+            .collect();
+
+        if parsed.is_empty() {
+            return Err(DataSourceError::ParseError("Empty intraday data".to_string()));
+        }
+
+        Ok(parsed)
+    }
 }

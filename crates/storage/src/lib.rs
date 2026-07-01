@@ -55,6 +55,18 @@ impl Storage {
                 PRIMARY KEY (code, report_date)
             );
 
+            CREATE TABLE IF NOT EXISTS intraday_bars (
+                code TEXT NOT NULL,
+                datetime TEXT NOT NULL,
+                open REAL,
+                high REAL,
+                low REAL,
+                close REAL,
+                volume REAL,
+                amount REAL,
+                PRIMARY KEY (code, datetime)
+            );
+
             CREATE TABLE IF NOT EXISTS browse_history (
                 code TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -107,6 +119,43 @@ impl Storage {
         bars.reverse();
         Ok(bars)
     }
+
+    // ── Intraday bars cache ──
+
+    pub fn save_intraday_bars(&self, bars: &[IntradayBar]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
+            "INSERT OR REPLACE INTO intraday_bars (code, datetime, open, high, low, close, volume, amount)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )?;
+        for bar in bars {
+            stmt.execute(rusqlite::params![
+                bar.code, bar.datetime,
+                bar.open, bar.high, bar.low, bar.close, bar.volume, bar.amount,
+            ])?;
+        }
+        Ok(())
+    }
+
+    pub fn get_intraday_bars(&self, code: &str, limit: usize) -> Result<Vec<IntradayBar>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
+            "SELECT code, datetime, open, high, low, close, volume, amount
+             FROM intraday_bars WHERE code = ?1 ORDER BY datetime DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![code, limit as i64], |row| {
+            Ok(IntradayBar {
+                code: row.get(0)?,
+                datetime: row.get(1)?,
+                open: row.get(2)?, high: row.get(3)?, low: row.get(4)?,
+                close: row.get(5)?, volume: row.get(6)?, amount: row.get(7)?,
+            })
+        })?;
+        let mut bars: Vec<IntradayBar> = rows.filter_map(|r| r.ok()).collect();
+        bars.reverse();
+        Ok(bars)
+    }
+
 
     // ── Financial reports cache ──
 

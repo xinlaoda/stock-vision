@@ -11,6 +11,7 @@ use stock_vision_analysis_core::FinancialAnalyzer;
 
 use crate::services::data_service::DataService;
 use crate::state::{AppState, KlinePeriod, Panel, TimeRange};
+use stock_vision_data_model::{IntradayBar, IntradayPeriod};
 use crate::ui::{panels, style};
 
 #[derive(Debug, Clone)]
@@ -28,6 +29,7 @@ pub enum Message {
     Tick(DateTime<Utc>),
     // Chart controls
     SetKlinePeriod(KlinePeriod),
+    SetIntradayPeriod(Option<IntradayPeriod>),
     SetTimeRange(TimeRange),
     ZoomIn,
     ZoomOut,
@@ -36,6 +38,7 @@ pub enum Message {
     AddDrawingLine(f64),
     ClearDrawingLines,
     MarketIndicesLoaded(Vec<crate::state::MarketIndexData>),
+    IntradayBarsLoaded(Vec<IntradayBar>),
 }
 
 pub struct StockVision {
@@ -112,6 +115,8 @@ impl StockVision {
                 self.state.push_browse_history(stock.clone());
                 self.state.active_panel = Panel::Chart;
                 self.state.kline_period = KlinePeriod::Daily;
+                self.state.intraday_period = None;
+                self.state.intraday_bars.clear();
                 self.state.time_range = TimeRange::OneYear;
                 self.state.daily_bars.clear();
                 let code = stock.code.clone();
@@ -150,6 +155,29 @@ impl StockVision {
             Message::SetTimeRange(range) => {
                 self.state.time_range = range;
                 // Don't re-fetch data — time range is a client-side filter
+                Task::none()
+            }
+            Message::SetIntradayPeriod(period) => {
+                self.state.intraday_period = period;
+                self.state.daily_bars.clear();
+                if let Some(p) = period {
+                    if let Some(ref code) = self.state.selected_stock.clone() {
+                        let exchange = self.state.stock_exchange.clone().unwrap_or(Exchange::SZ);
+                        let svc = self.data_service.clone();
+                        let code = code.clone();
+                        return Task::perform(
+                            async move { svc.load_intraday_bars(&code, exchange, p).await },
+                            |result| match result {
+                                Ok(bars) => Message::IntradayBarsLoaded(bars),
+                                Err(e) => Message::Error(e.to_string()),
+                            },
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::IntradayBarsLoaded(bars) => {
+                self.state.intraday_bars = bars;
                 Task::none()
             }
             Message::ZoomIn => {

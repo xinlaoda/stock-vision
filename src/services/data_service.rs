@@ -1,11 +1,12 @@
 use stock_vision_data_model::*;
-use stock_vision_data_source::{AdjustType, DataSource, TencentSource, EastMoneySource};
+use stock_vision_data_source::{AdjustType, DataSource, FallbackSource, TencentSource, EastMoneySource};
 use stock_vision_storage::Storage;
 use std::sync::Arc;
 use tracing::info;
 
 pub struct DataService {
-    kline_source: TencentSource,
+    /// Primary data source (with fallback chain)
+    source: FallbackSource,
     search_source: EastMoneySource,
     fin_source: EastMoneySource,
     storage: Arc<Storage>,
@@ -13,8 +14,13 @@ pub struct DataService {
 
 impl DataService {
     pub fn new(storage: Arc<Storage>) -> Self {
+        // Fallback chain: try Tencent first, then EastMoney, then Mock
+        let source = FallbackSource::new(vec![
+            Box::new(TencentSource::new()),
+            Box::new(EastMoneySource::new()),
+        ]);
         Self {
-            kline_source: TencentSource::new(),
+            source,
             search_source: EastMoneySource::new(),
             fin_source: EastMoneySource::new(),
             storage,
@@ -42,7 +48,7 @@ impl DataService {
 
         // Fetch from API
         info!("Cache miss for {} K-line, fetching from Tencent API", code);
-        let bars = self.kline_source
+        let bars = self.source
             .get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::Forward))
             .await?;
 
@@ -98,7 +104,7 @@ impl DataService {
         let cached_bars = self.storage.get_daily_bars(code, 4000).unwrap_or_default();
         if cached_bars.len() < 100 {
             info!("Background: fetching K-line for {} (cached: {} bars)", code, cached_bars.len());
-            if let Ok(bars) = self.kline_source
+            if let Ok(bars) = self.source
                 .get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::Forward))
                 .await
             {
@@ -148,7 +154,7 @@ impl DataService {
         let mut result = Vec::new();
         for (name, code, exchange) in indices {
             // Get K-line data for sparkline
-            let bars = self.kline_source.get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::None)).await.unwrap_or_default();
+            let bars = self.source.get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::None)).await.unwrap_or_default();
             let bars_60: Vec<_> = bars.into_iter().rev().take(60).rev().collect();
 
             let (price, change, change_pct) = if let Some(last) = bars_60.last() {
@@ -170,5 +176,39 @@ impl DataService {
 
         info!("Loaded {} market indices", result.len());
         Ok(result)
+    }
+
+    /// Load intraday (minute-level) K-line bars with SQLite cache + fallback.
+    /// Returns cached data if available (>= 10 bars), otherwise fetches from API
+    /// (tries multiple sources with fallback).
+    pub async fn load_intraday_bars(
+        &self,
+        code: &str,
+        exchange: Exchange,
+        period: IntradayPeriod,
+    ) -> anyhow::Result<Vec<IntradayBar>> {
+        // Check local cache first
+        let cached = self.storage.get_intraday_bars(code, 4000).unwrap_or_default();
+        if cached.len() >= 10 {
+            info!("Using cached intraday {} for {} ({} bars)", period.tencent_param(), code, cached.len());
+            return Ok(cached);
+        }
+
+        // Fetch from API with fallback
+        info!("Cache miss for intraday {} {}, fetching from API", period.tencent_param(), code);
+        let bars = self.source
+            .get_intraday_bars(code, exchange, period)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch intraday data: {}", e))?;
+
+        if !bars.is_empty() {
+            if let Err(e) = self.storage.save_intraday_bars(&bars) {
+                tracing::warn!("Failed to cache intraday bars: {}", e);
+            } else {
+                info!("Cached {} intraday bars for {} ({})", bars.len(), code, period.tencent_param());
+            }
+        }
+
+        Ok(bars)
     }
 }

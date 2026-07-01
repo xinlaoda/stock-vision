@@ -248,4 +248,76 @@ impl DataSource for EastMoneySource {
             dividend_yield: None,
         })
     }
+    async fn get_intraday_bars(
+        &self,
+        code: &str,
+        exchange: Exchange,
+        period: IntradayPeriod,
+    ) -> Result<Vec<IntradayBar>, DataSourceError> {
+        let secid = match exchange {
+            Exchange::SH => "1",
+            Exchange::SZ => "0",
+            Exchange::BJ => "0",
+        };
+
+        let klt = match period {
+            IntradayPeriod::Min1 => "1",
+            IntradayPeriod::Min5 => "5",
+            IntradayPeriod::Min15 => "15",
+            IntradayPeriod::Min30 => "30",
+            IntradayPeriod::Min60 => "60",
+        };
+
+        let url = format!(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get             ?secid={}.{}             &fields1=f1,f2,f3,f4,f5,f6             &fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61             &klt={}             &fqt=1             &end=20500101             &lmt=2000",
+            secid, code, klt,
+        );
+
+        tracing::info!("Fetching EastMoney intraday: {}", url);
+
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| DataSourceError::ApiError(format!("HTTP error: {}", e)))?;
+        let text = resp.text().await
+            .map_err(|e| DataSourceError::ParseError(format!("Read error: {}", e)))?;
+
+        let json: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| DataSourceError::ParseError(format!("JSON error: {}", e)))?;
+
+        let klines = json["data"]["klines"]
+            .as_array()
+            .ok_or_else(|| DataSourceError::ParseError("No klines array".to_string()))?;
+
+        let parsed: Vec<IntradayBar> = klines.iter()
+            .filter_map(|item| {
+                let line = item.as_str()?;
+                let parts: Vec<&str> = line.split(',').collect();
+                if parts.len() < 8 { return None; }
+
+                let datetime = parts[0].to_string();
+                let open = parts[1].parse::<f64>().ok()?;
+                let close = parts[2].parse::<f64>().ok()?;
+                let high = parts[3].parse::<f64>().ok()?;
+                let low = parts[4].parse::<f64>().ok()?;
+                let volume = parts[5].parse::<f64>().ok()?;
+                let amount = parts[6].parse::<f64>().ok()?;
+
+                Some(IntradayBar {
+                    code: code.to_string(),
+                    datetime,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    amount,
+                })
+            })
+            .collect();
+
+        if parsed.is_empty() {
+            return Err(DataSourceError::ParseError("Empty intraday data from EastMoney".to_string()));
+        }
+
+        Ok(parsed)
+    }
 }

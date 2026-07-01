@@ -102,4 +102,68 @@ impl DataSource for MockSource {
             dividend_yield: Some(3.5),
         })
     }
+
+    async fn get_intraday_bars(
+        &self,
+        code: &str,
+        _exchange: Exchange,
+        period: IntradayPeriod,
+    ) -> Result<Vec<IntradayBar>, DataSourceError> {
+        // Generate mock intraday data based on the last daily bar price
+        let base_price = 10.0;
+        let mut bars = Vec::new();
+        let now = chrono::Utc::now();
+        let date_str = now.format("%Y-%m-%d").to_string();
+        let start_hour = 9;
+        let start_min = match period {
+            IntradayPeriod::Min1 => 31,
+            IntradayPeriod::Min5 => 35,
+            IntradayPeriod::Min15 => 45,
+            IntradayPeriod::Min30 => 30,
+            IntradayPeriod::Min60 => 30,
+        };
+        let end_hour = 15;
+        let max_bars = match period {
+            IntradayPeriod::Min1 => 240,
+            IntradayPeriod::Min5 => 48,
+            IntradayPeriod::Min15 => 16,
+            IntradayPeriod::Min30 => 8,
+            IntradayPeriod::Min60 => 4,
+        };
+
+        let mut price = base_price;
+        for i in 0..max_bars {
+            let total_minutes = start_hour * 60 + start_min + i * match period {
+                IntradayPeriod::Min1 => 1,
+                IntradayPeriod::Min5 => 5,
+                IntradayPeriod::Min15 => 15,
+                IntradayPeriod::Min30 => 30,
+                IntradayPeriod::Min60 => 60,
+            };
+            let h = total_minutes / 60;
+            let m = total_minutes % 60;
+            if h > end_hour || (h == end_hour && m > 0) { break; }
+
+            let change = (i as f64 * 0.3).sin() * 0.3;
+            let open = price;
+            let close = price + change;
+            let high = open.max(close) + 0.1;
+            let low = open.min(close) - 0.1;
+
+            bars.push(IntradayBar {
+                code: code.to_string(),
+                datetime: format!("{} {:02}:{:02}", date_str, h, m),
+                open, high, low, close,
+                volume: 500_000.0 + (i as f64 * 1000.0),
+                amount: open * (500_000.0 + (i as f64 * 1000.0)),
+            });
+            price = close;
+        }
+
+        if bars.is_empty() {
+            return Err(DataSourceError::ParseError("No mock data".to_string()));
+        }
+        Ok(bars)
+    }
+
 }

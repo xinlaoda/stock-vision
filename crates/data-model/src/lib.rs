@@ -87,7 +87,7 @@ pub struct FinancialReport {
     pub net_margin: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ReportType {
     Q1,     // 一季报
     Mid,    // 中报
@@ -146,3 +146,61 @@ pub struct Watchlist {
     pub name: String,
     pub stocks: Vec<String>,
 }
+
+/// Intraday/minute-level K-line data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntradayBar {
+    pub code: String,
+    pub datetime: String,       // e.g. "2026-07-01 09:31"  or "2026-07-01 14:00"
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: f64,            // shares
+    pub amount: f64,            // turnover
+}
+
+/// Intraday period granularity
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum IntradayPeriod {
+    Min1,
+    Min5,
+    Min15,
+    Min30,
+    Min60,
+}
+
+impl IntradayPeriod {
+    pub fn label(&self) -> &str {
+        match self {
+            IntradayPeriod::Min1 => "1分钟",
+            IntradayPeriod::Min5 => "5分钟",
+            IntradayPeriod::Min15 => "15分钟",
+            IntradayPeriod::Min30 => "30分钟",
+            IntradayPeriod::Min60 => "60分钟",
+        }
+    }
+
+    /// Tencent ktype parameter
+    pub fn tencent_param(&self) -> &str {
+        match self {
+            IntradayPeriod::Min1 => "1min",
+            IntradayPeriod::Min5 => "5min",
+            IntradayPeriod::Min15 => "15min",
+            IntradayPeriod::Min30 => "30min",
+            IntradayPeriod::Min60 => "60min",
+        }
+    }
+}
+
+/// A data source error that allows fallback chaining
+#[derive(Debug, thiserror::Error)]
+pub enum DataSourceError {
+    #[error("API error: {0}")]
+    ApiError(String),
+    #[error("Parse error: {0}")]
+    ParseError(String),
+    #[error("Not supported by this source")]
+    NotSupported,
+}
+

@@ -6,6 +6,7 @@ use iced::widget::{button, column, container, row, text};
 use iced::{Color, Element, Fill};
 use iced::widget::button::Status;
 use iced::Theme;
+use stock_vision_data_model::{IntradayPeriod, IntradayBar};
 
 fn inactive_btn_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
     |_t: &Theme, _s: Status| iced::widget::button::Style {
@@ -75,6 +76,15 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             let title_elem = text(title).size(22.0).color(title_color);
 
             let label_color = style::palette::TEXT_SECONDARY;
+            // Determine which bars to use for price summary
+            let active_bars: &[stock_vision_data_model::DailyBar] = if state.intraday_period.is_some() && !state.intraday_bars.is_empty() {
+                // Convert intraday bars temporarily for display
+                // Use the intraday bars data directly
+                &state.daily_bars  // Will be empty, fallback to below
+            } else {
+                &state.daily_bars
+            };
+
             let price_summary: Element<'_, Message> = if !state.daily_bars.is_empty() {
                 let latest = &state.daily_bars[state.daily_bars.len() - 1];
                 let change_pct = (latest.close - latest.open) / latest.open * 100.0;
@@ -88,7 +98,21 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, label_color, style::palette::TEXT_PRIMARY),
                 ].spacing(24).into()
             } else {
-                text("正在加载数据...").size(14.0).color(style::palette::TEXT_SECONDARY).into()
+                if state.intraday_period.is_some() && !state.intraday_bars.is_empty() {
+                    let latest = &state.intraday_bars[state.intraday_bars.len() - 1];
+                    let change_pct = (latest.close - latest.open) / latest.open * 100.0;
+                    let change_color = if change_pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+                    row![
+                        metric("最新价", format!("{:.2}", latest.close), 28.0, style::palette::TEXT_SECONDARY, change_color),
+                        metric("涨幅", format!("{:.2}%", change_pct), 18.0, style::palette::TEXT_SECONDARY, change_color),
+                        metric("开盘", format!("{:.2}", latest.open), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
+                        metric("最高", format!("{:.2}", latest.high), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
+                        metric("最低", format!("{:.2}", latest.low), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
+                        metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, style::palette::TEXT_SECONDARY, style::palette::TEXT_PRIMARY),
+                    ].spacing(24).into()
+                } else {
+                    text("正在加载数据...").size(14.0).color(style::palette::TEXT_SECONDARY).into()
+                }
             };
 
             // ── MA Legend ──
@@ -153,7 +177,25 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             };
 
             // ── Chart ──
-            let chart_element: Element<'static, Message> = if !state.daily_bars.is_empty() {
+            let chart_element: Element<'static, Message> = if state.intraday_period.is_some() && !state.intraday_bars.is_empty() {
+                // Use intraday bars directly (no aggregation needed)
+                let ibars = state.intraday_bars.clone();
+                // Convert IntradayBar to a pseudo-DailyBar for rendering
+                let converted: Vec<stock_vision_data_model::DailyBar> = ibars.iter().map(|ib| {
+                    // Parse datetime to extract date
+                    let date = ib.datetime.split(' ').next()
+                        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                        .unwrap_or(chrono::Utc::now().date_naive());
+                    stock_vision_data_model::DailyBar {
+                        code: ib.code.clone(),
+                        date,
+                        open: ib.open, high: ib.high, low: ib.low, close: ib.close,
+                        volume: ib.volume, amount: ib.amount,
+                        change_pct: None,
+                    }
+                }).collect();
+                CandlestickCanvas::new(converted, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset, state.drawing_lines.clone()).into_element()
+            } else if !state.daily_bars.is_empty() {
                 let filtered = filter_bars(&state.daily_bars, state.time_range);
                 let period = state.kline_period;
                 let aggregated = aggregate_bars(&filtered, period);

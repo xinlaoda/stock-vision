@@ -137,6 +137,8 @@ pub struct AppState {
 
     // Chart settings
     pub kline_period: KlinePeriod,
+    pub intraday_period: Option<IntradayPeriod>,
+    pub intraday_bars: Vec<IntradayBar>,
     pub time_range: TimeRange,
     pub zoom_level: usize,
     pub pan_offset: usize,
@@ -188,6 +190,8 @@ impl AppState {
             valuation: None,
             financial_health: None,
             kline_period: KlinePeriod::Daily,
+            intraday_period: None,
+            intraday_bars: Vec::new(),
             time_range: TimeRange::OneYear,
             zoom_level: 60,
             pan_offset: 0,
