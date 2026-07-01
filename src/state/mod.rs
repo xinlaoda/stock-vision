@@ -1,6 +1,7 @@
 use chrono::{DateTime, Datelike, Utc};
 use stock_vision_data_model::*;
 use stock_vision_storage::Storage;
+use crate::services::indicator_service::IndicatorType;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,6 +147,9 @@ pub struct AppState {
     // Drawing tools
     pub drawing_lines: Vec<DrawingLine>,
 
+    // Technical indicators
+    pub active_indicators: Vec<IndicatorType>,
+
     // Browse history
     pub browse_history: Vec<Stock>,
 
@@ -199,6 +203,7 @@ impl AppState {
             zoom_level: 60,
             pan_offset: 0,
             drawing_lines: Vec::new(),
+            active_indicators: vec![IndicatorType::MACD],  // MACD enabled by default
             browse_history: Vec::new(),
             market_indices: Vec::new(),
             watchlist: watchlist_from_db,

@@ -11,6 +11,7 @@ use stock_vision_analysis_core::FinancialAnalyzer;
 
 use crate::services::data_service::DataService;
 use crate::state::{AppState, KlinePeriod, Panel, TimeRange};
+use crate::services::indicator_service::IndicatorType;
 use stock_vision_data_model::{IntradayBar, IntradayPeriod};
 use crate::ui::{panels, style};
 
@@ -39,6 +40,7 @@ pub enum Message {
     ClearDrawingLines,
     MarketIndicesLoaded(Vec<crate::state::MarketIndexData>),
     IntradayBarsLoaded(Vec<IntradayBar>),
+    ToggleIndicator(IndicatorType),
 }
 
 pub struct StockVision {
@@ -240,6 +242,14 @@ impl StockVision {
             Message::MarketIndicesLoaded(indices) => { self.state.market_indices = indices; Task::none() }
             Message::AddDrawingLine(price) => { self.state.drawing_lines.push(crate::state::DrawingLine { price, color: (0.8, 0.8, 0.3) }); Task::none() }
             Message::ClearDrawingLines => { self.state.drawing_lines.clear(); Task::none() }
+            Message::ToggleIndicator(indicator) => {
+                if let Some(pos) = self.state.active_indicators.iter().position(|i| *i == indicator) {
+                    self.state.active_indicators.remove(pos);
+                } else {
+                    self.state.active_indicators.push(indicator);
+                }
+                Task::none()
+            }
             Message::PanBy(dx) => { 
                 let new_off = (self.state.pan_offset as f32 - dx).max(0.0) as usize;
                 self.state.pan_offset = new_off.min(self.state.daily_bars.len().saturating_sub(self.state.zoom_level));

@@ -4579,6 +4579,7 @@ dependencies = [
 name = "stock-vision-indicator-core"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "stock-vision-data-model",
 ]
 

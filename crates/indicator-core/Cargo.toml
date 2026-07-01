@@ -6,3 +6,4 @@ description = "Technical indicator calculation engine"
 
 [dependencies]
 stock-vision-data-model = { path = "../data-model" }
+chrono = "0.4"

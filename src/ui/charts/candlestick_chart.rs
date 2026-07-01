@@ -1,6 +1,7 @@
 use iced::widget::canvas::{self, Frame, Geometry, Path, Program};
 use iced::{Color, Element, Fill, Point, Rectangle, Size};
 
+use crate::services::indicator_service::{ComputedIndicator, IndicatorType};
 use stock_vision_data_model::DailyBar;
 use crate::state::TimeRange;
 
@@ -9,6 +10,12 @@ const TOP_PAD: f32 = 15.0;
 const BOTTOM_PAD: f32 = 30.0;
 const DASH_LEN: f32 = 4.0;
 const GAP_LEN: f32 = 3.0;
+
+/// A sub-panel indicator (KDJ, RSI, or MACD)
+struct SubIndicator {
+    data: ComputedIndicator,
+    r#type: IndicatorType,
+}
 
 /// Layout ratios for the 3-section chart
 const KLINE_RATIO: f32 = 0.55;
@@ -64,6 +71,31 @@ fn compute_volume_ma(bars: &[DailyBar], period: usize) -> Vec<Option<f64>> {
         else { result.push(None); }
     }
     result
+}
+
+/// Compute Bollinger Bands (20, 2).
+/// Returns (upper, middle, lower) as Vec<Option<f64>>.
+fn compute_bollinger(bars: &[DailyBar]) -> (Vec<Option<f64>>, Vec<Option<f64>>, Vec<Option<f64>>) {
+    use stock_vision_indicator_core::{BollingerBands, SMA, Indicator};
+    let bb = BollingerBands { period: 20, std_dev: 2.0 };
+    let upper_result = bb.calculate(bars);
+    let sma = SMA { period: 20 };
+    let mid_result = sma.calculate(bars);
+    
+    let upper: Vec<Option<f64>> = upper_result.values.iter().map(|v| {
+        if v.value.is_nan() { None } else { Some(v.value) }
+    }).collect();
+    let middle: Vec<Option<f64>> = mid_result.values.iter().map(|v| {
+        if v.value.is_nan() { None } else { Some(v.value) }
+    }).collect();
+    let lower: Vec<Option<f64>> = upper.iter().zip(middle.iter()).map(|(u, m)| {
+        match (u, m) {
+            (Some(u), Some(m)) => Some(m - (u - m)),
+            _ => None,
+        }
+    }).collect();
+    
+    (upper, middle, lower)
 }
 
 /// Compute MACD (12, 26, 9).
@@ -135,11 +167,17 @@ pub struct CandlestickCanvas {
     ma60: Vec<Option<f64>>,
     vol_ma5: Vec<Option<f64>>,
     macd: Vec<MacdLine>,
+    /// BOLL bands: (upper, middle, lower)
+    boll_upper: Vec<Option<f64>>,
+    boll_middle: Vec<Option<f64>>,
+    boll_lower: Vec<Option<f64>>,
+    /// Active sub-panel indicator (KDJ, RSI) replacing MACD when set
+    sub_indicator: Option<SubIndicator>,
     drawing_lines: Vec<crate::state::DrawingLine>,
 }
 
 impl CandlestickCanvas {
-    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>) -> Self {
+    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>, active_indicators: &[IndicatorType]) -> Self {
         let visible = zoom_level.max(10).min(bars.len().max(10));
         let ma5 = compute_ma(&bars, 5);
         let ma10 = compute_ma(&bars, 10);
@@ -147,10 +185,28 @@ impl CandlestickCanvas {
         let ma60 = compute_ma(&bars, 60);
         let vol_ma5 = compute_volume_ma(&bars, 5);
         let macd = compute_macd(&bars);
+        
+        let has_boll = active_indicators.iter().any(|i| *i == IndicatorType::BollingerBands);
+        let (boll_upper, boll_middle, boll_lower) = if has_boll {
+            compute_bollinger(&bars)
+        } else {
+            (vec![], vec![], vec![])
+        };
+        
+        let sub_indicator = active_indicators.iter()
+            .find(|i| i.is_sub_panel())
+            .and_then(|indicator_type| {
+                let indicator_type = *indicator_type;
+                crate::services::indicator_service::compute_indicator(indicator_type, &bars)
+                    .map(|data| SubIndicator { data, r#type: indicator_type })
+            });
+        
         Self {
             bars, time_range, scroll_offset: pan_offset, visible_count: visible,
             min_bar_width: 3.0, hovered_index: hovered,
-            ma5, ma10, ma20, ma60, vol_ma5, macd, drawing_lines,
+            ma5, ma10, ma20, ma60, vol_ma5, macd,
+            boll_upper, boll_middle, boll_lower, sub_indicator,
+            drawing_lines,
         }
     }
 
@@ -233,6 +289,25 @@ impl CandlestickCanvas {
         }
     }
 
+    /// Draw a generic line indicator (for BOLL, etc.)
+    fn draw_indicator_line(&self, frame: &mut Frame, data: &[Option<f64>], start_global: usize, color: Color, sx: f32, sp: f32, bw: f32, to_px: &dyn Fn(f64) -> f32) {
+        if data.is_empty() { return; }
+        let bars = self.get_visible_bars();
+        let mut points: Vec<(f32, f32)> = Vec::new();
+        for (i, bar) in bars.iter().enumerate() {
+            let gi = start_global + i;
+            if gi >= data.len() { break; }
+            if let Some(v) = data[gi] {
+                points.push((sx + i as f32 * sp + bw / 2.0, to_px(v)));
+            }
+        }
+        for win in points.windows(2) {
+            let (x1, y1) = win[0]; let (x2, y2) = win[1];
+            frame.stroke(&Path::line(Point::new(x1, y1), Point::new(x2, y2)),
+                canvas::Stroke::default().with_color(color).with_width(1.5));
+        }
+    }
+
     fn draw_ma_line(&self, frame: &mut Frame, ma: &[Option<f64>], start_global: usize, color: Color, sx: f32, sp: f32, bw: f32, to_px: &dyn Fn(f64) -> f32) {
         if ma.is_empty() { return; }
         let bars = self.get_visible_bars();
@@ -252,8 +327,23 @@ impl CandlestickCanvas {
     }
 }
 
+/// Canvas interaction state
+#[derive(Default)]
+pub struct CanvasState {
+    pub drag_start_x: Option<f32>,
+}
+
+impl CandlestickCanvas {
+    /// Helper: compute visible bar info
+    fn get_visible_start(&self) -> usize {
+        let total = self.bars.len();
+        let end = total.saturating_sub(self.scroll_offset);
+        end.saturating_sub(self.visible_count)
+    }
+}
+
 impl Program<crate::app::Message> for CandlestickCanvas {
-    type State = ();
+    type State = CanvasState;
 
     fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &iced::Theme, bounds: Rectangle, _cursor: iced::mouse::Cursor) -> Vec<Geometry> {
         let width = bounds.width; let height = bounds.height;
@@ -320,6 +410,30 @@ impl Program<crate::app::Message> for CandlestickCanvas {
         self.draw_ma_line(&mut frame, &self.ma10, sg, Color::from_rgb(0.3, 0.7, 1.0), sx, sp, bw, &ma_to_px);
         self.draw_ma_line(&mut frame, &self.ma20, sg, Color::from_rgb(1.0, 0.4, 0.7), sx, sp, bw, &ma_to_px);
         self.draw_ma_line(&mut frame, &self.ma60, sg, Color::from_rgb(0.2, 0.8, 0.4), sx, sp, bw, &ma_to_px);
+
+        // ── BOLL Bands ──
+        if !self.boll_upper.is_empty() {
+            let boll_up_color = Color::from_rgba(0.9, 0.6, 0.2, 0.7);
+            let boll_mid_color = Color::from_rgba(1.0, 0.85, 0.2, 0.8);
+            let boll_lo_color = Color::from_rgba(0.9, 0.6, 0.2, 0.7);
+            // Draw filled area between upper and lower bands
+            let mut up_pts: Vec<Option<(f32, f32)>> = Vec::new();
+            let mut lo_pts: Vec<Option<(f32, f32)>> = Vec::new();
+            for (i, bar) in bars.iter().enumerate() {
+                let gi = sg + i;
+                if gi < self.boll_upper.len() && gi < self.boll_lower.len() {
+                    let cx = sx + i as f32 * sp + bw / 2.0;
+                    if let (Some(u), Some(l)) = (self.boll_upper[gi], self.boll_lower[gi]) {
+                        up_pts.push(Some((cx, k_mp(u))));
+                        lo_pts.push(Some((cx, k_mp(l))));
+                    } else { up_pts.push(None); lo_pts.push(None); }
+                }
+            }
+            // Draw the three BOLL lines
+            self.draw_indicator_line(&mut frame, &self.boll_upper, sg, boll_up_color, sx, sp, bw, &k_mp);
+            self.draw_indicator_line(&mut frame, &self.boll_middle, sg, boll_mid_color, sx, sp, bw, &k_mp);
+            self.draw_indicator_line(&mut frame, &self.boll_lower, sg, boll_lo_color, sx, sp, bw, &k_mp);
+        }
 
         // ── Y-axis price labels ──
         for i in 0..5 {
@@ -473,6 +587,16 @@ impl Program<crate::app::Message> for CandlestickCanvas {
                 None
             }
             canvas::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                // Handle drag panning
+                if let Some(start_x) = _state.drag_start_x {
+                    let dx = position.x - start_x;
+                    if dx.abs() > 3.0 {
+                        _state.drag_start_x = Some(position.x);
+                        return Some(canvas::Action::publish(crate::app::Message::PanBy(dx)));
+                    }
+                    return None;
+                }
+                
                 let bars = self.get_visible_bars();
                 if bars.is_empty() { return Some(canvas::Action::publish(crate::app::Message::HoverBar(None))); }
                 let total_width = bounds.width - 60.0;
@@ -488,23 +612,15 @@ impl Program<crate::app::Message> for CandlestickCanvas {
                 let sg = end.saturating_sub(self.visible_count);
                 Some(canvas::Action::publish(crate::app::Message::HoverBar(Some(sg + idx))))
             }
-            canvas::Event::Mouse(iced::mouse::Event::CursorLeft) => Some(canvas::Action::publish(crate::app::Message::HoverBar(None))),
+            canvas::Event::Mouse(iced::mouse::Event::CursorLeft) => { _state.drag_start_x = None; Some(canvas::Action::publish(crate::app::Message::HoverBar(None))) }
+            canvas::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                _state.drag_start_x = None;
+                None
+            }
             canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
-                // Add horizontal line at click position if hovering a bar
-                if let Some(hover_idx) = self.hovered_index {
-                    let bars = self.get_visible_bars();
-                    let sg3 = {
-                        let total = self.bars.len();
-                        let end = total.saturating_sub(self.scroll_offset);
-                        end.saturating_sub(self.visible_count)
-                    };
-                    if hover_idx >= sg3 && hover_idx < sg3 + bars.len() {
-                        let li = hover_idx - sg3;
-                        if li < bars.len() {
-                            let bar = &bars[li];
-                            return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close)));
-                        }
-                    }
+                // Start drag: save starting position
+                if let Some(pos) = cursor.position_over(bounds) {
+                    _state.drag_start_x = Some(pos.x);
                 }
                 None
             }

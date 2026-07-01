@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 /// Technical indicator calculation core.
 /// Provides implementations of common technical analysis indicators.
 
@@ -238,4 +239,133 @@ impl Indicator for BollingerBands {
             values,
         }
     }
+}
+
+// ═══════════════════════════════════
+// KDJ (Stochastic Oscillator)
+// ═══════════════════════════════════
+
+pub struct KDJ {
+    pub n: usize,   // RSV period (default 9)
+    pub m1: usize,  // K smoothing (default 3)
+    pub m2: usize,  // D smoothing (default 3)
+}
+
+impl KDJ {
+    pub fn default() -> Self {
+        Self { n: 9, m1: 3, m2: 3 }
+    }
+}
+
+impl Indicator for KDJ {
+    fn name(&self) -> &str {
+        "KDJ"
+    }
+
+    fn calculate(&self, bars: &[DailyBar]) -> IndicatorResult {
+        // KDJ returns K values (most commonly plotted)
+        let mut values = Vec::new();
+        let mut k: f64 = 50.0;
+        let mut d: f64 = 50.0;
+
+        for i in 0..bars.len() {
+            if i + 1 < self.n {
+                values.push(IndicatorValue {
+                    date: bars[i].date,
+                    value: f64::NAN,
+                });
+                continue;
+            }
+
+            // Find highest high and lowest low over period N
+            let mut hh = f64::MIN;
+            let mut ll = f64::MAX;
+            for j in i + 1 - self.n..=i {
+                hh = hh.max(bars[j].high);
+                ll = ll.min(bars[j].low);
+            }
+
+            let rsv = if hh != ll {
+                (bars[i].close - ll) / (hh - ll) * 100.0
+            } else {
+                50.0
+            };
+
+            if i == self.n - 1 {
+                k = rsv;
+                d = rsv;
+            } else {
+                k = (self.m1 as f64 - 1.0) / self.m1 as f64 * k + (1.0 / self.m1 as f64) * rsv;
+                d = (self.m2 as f64 - 1.0) / self.m2 as f64 * d + (1.0 / self.m2 as f64) * k;
+            }
+
+            // Return K value (J = 3K - 2D, but for UI we usually show K/D/J lines)
+            // Store K in the result
+            values.push(IndicatorValue {
+                date: bars[i].date,
+                value: k,
+            });
+        }
+
+        IndicatorResult {
+            name: format!("KDJ({},{},{})", self.n, self.m1, self.m2),
+            values,
+        }
+    }
+}
+
+impl KDJ {
+    pub fn calculate_full(&self, bars: &[DailyBar]) -> Vec<KDJPoint> {
+        let mut result = Vec::new();
+        let mut k: f64 = 50.0;
+        let mut d: f64 = 50.0;
+
+        for i in 0..bars.len() {
+            if i + 1 < self.n {
+                result.push(KDJPoint {
+                    date: bars[i].date,
+                    k: f64::NAN,
+                    d: f64::NAN,
+                    j: f64::NAN,
+                });
+                continue;
+            }
+
+            let mut hh = f64::MIN;
+            let mut ll = f64::MAX;
+            for j in i + 1 - self.n..=i {
+                hh = hh.max(bars[j].high);
+                ll = ll.min(bars[j].low);
+            }
+
+            let rsv = if hh != ll {
+                (bars[i].close - ll) / (hh - ll) * 100.0
+            } else {
+                50.0
+            };
+
+            if i == self.n - 1 {
+                k = rsv;
+                d = rsv;
+            } else {
+                k = (self.m1 as f64 - 1.0) / self.m1 as f64 * k + (1.0 / self.m1 as f64) * rsv;
+                d = (self.m2 as f64 - 1.0) / self.m2 as f64 * d + (1.0 / self.m2 as f64) * k;
+            }
+            let j = 3.0 * k - 2.0 * d;
+
+            result.push(KDJPoint {
+                date: bars[i].date,
+                k, d, j,
+            });
+        }
+        result
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KDJPoint {
+    pub date: NaiveDate,
+    pub k: f64,
+    pub d: f64,
+    pub j: f64,
 }
