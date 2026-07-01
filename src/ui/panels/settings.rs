@@ -54,9 +54,9 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     let key_display = if finnhub_key.is_empty() { 
         String::from("输入 Finnhub API Key...") 
     } else {
-        // Show masked key
-        let visible = if finnhub_key.len() > 8 { &finnhub_key[..4] } else { &finnhub_key[..finnhub_key.len().min(4)] };
-        format!("{}****", visible)
+        // Show masked key (use chars() to avoid multi-byte slice panic)
+        let visible_chars: String = finnhub_key.chars().take(4).collect();
+        format!("{}****", visible_chars)
     };
     
     content = content.push(
@@ -75,7 +75,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     let finnhub_status = if state.finnhub_available {
         "✅ Finnhub 已启用"
     } else if !state.finnhub_api_key.is_empty() {
-        "⏳ Finnhub 已配置，重启后生效"
+        "⏳ Finnhub 已配置（保存后立即生效）"
     } else {
         "❌ Finnhub 未配置（使用 Yahoo Finance 作为美股数据源）"
     };
@@ -134,7 +134,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             .size(13.0).color(style::colors().text_secondary),
     );
 
-    container(scrollable(content)).width(Fill).height(Fill).into()
+    container(scrollable(content).width(Fill).height(Fill)).width(Fill).height(Fill).into()
 }
 
 fn format_cache_info(state: &AppState) -> String {

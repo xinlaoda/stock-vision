@@ -383,9 +383,9 @@ impl StockVision {
             Message::FinnhubKeyChanged(k) => { self.state.finnhub_api_key = k; Task::none() }
             Message::FinnhubKeySubmitted => {
                 let key = self.state.finnhub_api_key.clone();
-                // Store in SQLite (will be picked up on next restart)
-                self.state.storage.set_config("finnhub_api_key", &key);
-                // Update finnhub_available status (check env var + stored key)
+                // Save to SQLite + hot-swap Finnhub client immediately
+                self.data_service.set_finnhub_api_key(&key);
+                // Update UI status
                 let env_has_key = std::env::var("FINNHUB_API_KEY").ok()
                     .filter(|k| !k.is_empty() && k != "your_key_here").is_some();
                 self.state.finnhub_available = env_has_key || (!key.is_empty() && key != "your_key_here");

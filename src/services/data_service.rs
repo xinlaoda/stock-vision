@@ -1,7 +1,7 @@
 use stock_vision_data_model::*;
 use stock_vision_data_source::{AdjustType, DataSource, FallbackSource, TencentSource, EastMoneySource, YahooSource, FinnhubSource};
 use stock_vision_storage::Storage;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::info;
 
 pub struct DataService {
@@ -9,8 +9,8 @@ pub struct DataService {
     source: FallbackSource,
     /// Data source for US stocks (Yahoo Finance - free, no key needed)
     us_source: YahooSource,
-    /// Data source for US stocks (Finnhub - richer, needs API key)
-    finnhub_source: FinnhubSource,
+    /// Data source for US stocks (Finnhub - richer, needs API key, hot-swappable)
+    finnhub_source: Mutex<FinnhubSource>,
     search_source: EastMoneySource,
     fin_source: EastMoneySource,
     storage: Arc<Storage>,
@@ -30,52 +30,65 @@ impl DataService {
         Self {
             source,
             us_source: YahooSource::new(),
-            finnhub_source: FinnhubSource::with_optional_key(stored_key.as_deref()),
+            finnhub_source: Mutex::new(FinnhubSource::with_optional_key(stored_key.as_deref())),
             search_source: EastMoneySource::new(),
             fin_source: EastMoneySource::new(),
             storage,
         }
     }
 
-    /// Whether Finnhub is configured and available
+    /// Whether Finnhub is configured and available (check env var + stored key)
     pub fn is_finnhub_available(&self) -> bool {
-        self.finnhub_source.is_available()
+        // Check env var
+        if let Ok(key) = std::env::var("FINNHUB_API_KEY") {
+            if !key.is_empty() && key != "your_key_here" {
+                return true;
+            }
+        }
+        // Check stored key
+        if let Some(key) = self.storage.get_config("finnhub_api_key") {
+            if !key.is_empty() && key != "your_key_here" {
+                return true;
+            }
+        }
+        false
     }
 
-    /// Set Finnhub API key dynamically (from settings UI).
-    /// Stores in SQLite and re-initializes the Finnhub client.
-    /// Environment variable FINNHUB_API_KEY takes priority.
-    pub fn set_finnhub_api_key(&mut self, key: &str) {
+    /// Set Finnhub API key dynamically — saves to SQLite + hot-swaps the client immediately.
+    pub fn set_finnhub_api_key(&self, key: &str) {
         // Store in SQLite
         let _ = self.storage.set_config("finnhub_api_key", key);
-        // Re-initialize Finnhub source with the stored key
-        // with_optional_key handles priority: explicit key > env var > disabled
-        self.finnhub_source = FinnhubSource::with_optional_key(Some(key));
+        // Hot-swap the Finnhub client immediately (no restart needed)
+        let mut finnhub = self.finnhub_source.lock().unwrap();
+        *finnhub = FinnhubSource::with_optional_key(Some(key));
     }
 
-    /// Get the current Finnhub API key (from env var or SQLite)
+    /// Get the current Finnhub API key (env var > SQLite)
     pub fn get_finnhub_api_key(&self) -> String {
-        // Env var takes priority
         if let Ok(key) = std::env::var("FINNHUB_API_KEY") {
             if !key.is_empty() {
                 return key;
             }
         }
-        // Fall back to SQLite config
         self.storage.get_config("finnhub_api_key").unwrap_or_default()
     }
 
-    /// Select data source based on exchange
-    /// For US stocks: prefers Finnhub (richer data) if available, falls back to Yahoo
-    fn source_for_exchange(&self, exchange: &Exchange) -> &dyn DataSource {
+    /// Select the best data source for a given exchange.
+    /// Returns a Box since the source type varies at runtime.
+    fn source_for_exchange(&self, exchange: &Exchange) -> Box<dyn DataSource> {
         if exchange.is_us() {
-            if self.finnhub_source.is_available() {
-                &self.finnhub_source as &dyn DataSource
+            let finnhub = self.finnhub_source.lock().unwrap();
+            if finnhub.is_available() {
+                // Drop lock, then create a fresh FinnhubSource with the key
+                // (reqwest::Client is Arc internally so this is cheap)
+                drop(finnhub);
+                Box::new(FinnhubSource::new())
             } else {
-                &self.us_source as &dyn DataSource
+                drop(finnhub);
+                Box::new(YahooSource::new())
             }
         } else {
-            &self.source as &dyn DataSource
+            Box::new(TencentSource::new())
         }
     }
 
@@ -84,8 +97,9 @@ impl DataService {
         match self.search_source.search_stocks(keyword).await {
             Ok(stocks) if !stocks.is_empty() => Ok(stocks),
             _ => {
-                if self.finnhub_source.is_available() {
-                    match self.finnhub_source.search_stocks(keyword).await {
+                let has_finnhub = self.finnhub_source.lock().unwrap().is_available();
+                if has_finnhub {
+                    match FinnhubSource::new().search_stocks(keyword).await {
                         Ok(stocks) if !stocks.is_empty() => Ok(stocks),
                         _ => self.us_source.search_stocks(keyword).await
                     }
@@ -97,8 +111,6 @@ impl DataService {
     }
 
     /// Load daily bars with SQLite cache.
-    /// Returns cached data if available (>= 100 bars), otherwise fetches from API.
-    /// For US stocks, skip cache threshold (fewer bars available) and use Yahoo source.
     pub async fn load_daily_bars(
         &self,
         code: &str,
@@ -107,7 +119,6 @@ impl DataService {
         let is_us = exchange.is_us();
         let min_bars = if is_us { 10 } else { 100 };
 
-        // Check local cache first
         let cached = self.storage.get_daily_bars(code, 4000).unwrap_or_default();
 
         if cached.len() >= min_bars {
@@ -115,9 +126,8 @@ impl DataService {
             return Ok(cached);
         }
 
-        // Fetch from API (use different source for US vs A-share)
         info!("Cache miss for {} K-line, fetching from {}", 
-            code, if is_us { "Yahoo Finance" } else { "Tencent API" });
+            code, if is_us { "Yahoo/Finnhub" } else { "Tencent API" });
         
         let source = self.source_for_exchange(&exchange);
         let bars = source
@@ -136,8 +146,6 @@ impl DataService {
     }
 
     /// Load financial reports with SQLite cache.
-    /// Returns cached data if available, otherwise fetches from API.
-    /// Uses Finnhub for US stocks (if available), EastMoney for A-share.
     pub async fn load_financial_data(
         &self,
         code: &str,
@@ -149,8 +157,13 @@ impl DataService {
         let cached = self.storage.get_financial_reports(code).unwrap_or_default();
         if cached.len() >= 4 {
             info!("Using cached financial reports for {} ({} reports)", code, cached.len());
-            let valuation = if is_us && self.finnhub_source.is_available() {
-                self.finnhub_source.get_valuation_ratios(code, exchange.clone()).await?
+            let has_finnhub_cache = is_us && self.finnhub_source.lock().unwrap().is_available();
+            let valuation = if is_us {
+                if has_finnhub_cache {
+                    FinnhubSource::new().get_valuation_ratios(code, exchange.clone()).await?
+                } else {
+                    self.fin_source.get_valuation_ratios(code, exchange.clone()).await?
+                }
             } else {
                 self.fin_source.get_valuation_ratios(code, exchange.clone()).await?
             };
@@ -158,15 +171,24 @@ impl DataService {
         }
 
         // Fetch from API
-        let fin_source: &dyn DataSource = if is_us && self.finnhub_source.is_available() {
-            info!("Cache miss for {} financial reports, fetching from Finnhub", code);
-            &self.finnhub_source as &dyn DataSource
+        let (reports, valuation) = if is_us {
+            let has_finnhub = self.finnhub_source.lock().unwrap().is_available();
+            if has_finnhub {
+                info!("Cache miss for {} financial reports, fetching from Finnhub", code);
+                let fh = FinnhubSource::new();
+                let r = fh.get_financial_reports(code, exchange.clone(), None).await?;
+                let v = fh.get_valuation_ratios(code, exchange.clone()).await?;
+                (r, v)
+            } else {
+                info!("Finnhub not available, financial reports for US stocks limited");
+                (Vec::new(), self.fin_source.get_valuation_ratios(code, exchange.clone()).await?)
+            }
         } else {
             info!("Cache miss for {} financial reports, fetching from EastMoney", code);
-            &self.fin_source as &dyn DataSource
+            let r = self.fin_source.get_financial_reports(code, exchange.clone(), None).await?;
+            let v = self.fin_source.get_valuation_ratios(code, exchange.clone()).await?;
+            (r, v)
         };
-
-        let reports = fin_source.get_financial_reports(code, exchange.clone(), None).await?;
 
         if !reports.is_empty() {
             if let Err(e) = self.storage.save_financial_reports(&reports) {
@@ -176,12 +198,10 @@ impl DataService {
             }
         }
 
-        let valuation = fin_source.get_valuation_ratios(code, exchange.clone()).await?;
         Ok((reports, valuation))
     }
 
     /// Smart background sync: only fetches data not yet in cache.
-    /// Uses correct data source based on exchange (Yahoo for US, Tencent/EastMoney for A-share).
     pub async fn load_all(&self, code: &str, exchange: Exchange) -> anyhow::Result<()> {
         let is_us = exchange.is_us();
         let min_bars = if is_us { 10 } else { 100 };
@@ -206,12 +226,17 @@ impl DataService {
             info!("Background: K-line for {} already cached ({} bars), skipping", code, cached_bars.len());
         }
 
-        // Financial reports: only for A-share (Yahoo doesn't support financial reports)
-        if !is_us {
+        // Financial reports: only for A-share or if Finnhub available
+        if !is_us || self.is_finnhub_available() {
             let cached_reports = self.storage.get_financial_reports(code).unwrap_or_default();
             if cached_reports.len() < 4 {
                 info!("Background: fetching financial reports for {} (cached: {} reports)", code, cached_reports.len());
-                if let Ok(reports) = self.fin_source.get_financial_reports(code, exchange.clone(), None).await {
+                let fin_source: Box<dyn DataSource> = if is_us {
+                    Box::new(FinnhubSource::new())
+                } else {
+                    Box::new(EastMoneySource::new())
+                };
+                if let Ok(reports) = fin_source.get_financial_reports(code, exchange.clone(), None).await {
                     if !reports.is_empty() {
                         let _ = self.storage.save_financial_reports(&reports);
                         fetched_anything = true;
@@ -232,7 +257,6 @@ impl DataService {
     }
 
     /// Fetch real-time market indices data for the home page.
-    /// Uses Tencent's realtime quote API + K-line API.
     pub async fn load_market_indices(&self) -> anyhow::Result<Vec<crate::state::MarketIndexData>> {
         let indices: Vec<(&str, &str, Exchange)> = vec![
             ("上证指数", "000001", Exchange::SH),
@@ -243,7 +267,6 @@ impl DataService {
 
         let mut result = Vec::new();
         for (name, code, exchange) in indices {
-            // Get K-line data for sparkline
             let bars = self.source.get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::None)).await.unwrap_or_default();
             let bars_60: Vec<_> = bars.into_iter().rev().take(60).rev().collect();
 
@@ -269,22 +292,18 @@ impl DataService {
     }
 
     /// Load intraday (minute-level) K-line bars with SQLite cache + fallback.
-    /// Returns cached data if available (>= 10 bars), otherwise fetches from API
-    /// (tries multiple sources with fallback).
     pub async fn load_intraday_bars(
         &self,
         code: &str,
         exchange: Exchange,
         period: IntradayPeriod,
     ) -> anyhow::Result<Vec<IntradayBar>> {
-        // Check local cache first
         let cached = self.storage.get_intraday_bars(code, 4000).unwrap_or_default();
         if cached.len() >= 10 {
             info!("Using cached intraday {} for {} ({} bars)", period.tencent_param(), code, cached.len());
             return Ok(cached);
         }
 
-        // Fetch from API with fallback
         info!("Cache miss for intraday {} {}, fetching from API", period.tencent_param(), code);
         let bars = self.source
             .get_intraday_bars(code, exchange, period)
@@ -302,9 +321,7 @@ impl DataService {
         Ok(bars)
     }
 
-
     /// Load the latest daily bars (for realtime quote updates).
-    /// Uses correct data source based on exchange.
     pub async fn load_latest_bars(
         &self,
         code: &str,
