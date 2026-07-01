@@ -146,6 +146,23 @@ impl Program<crate::app::Message> for IntradayCanvas {
             ..Default::default()
         });
 
+        // Legend at top
+        let legend_color = Color::from_rgb(0.7, 0.7, 0.7);
+        frame.fill_text(canvas::Text {
+            content: format!("分时  开:{:.2} 高:{:.2} 低:{:.2}", self.bars[0].open, max_price, min_price),
+            position: Point::new(plot_left + 5.0, TOP_PAD + 2.0),
+            color: legend_color,
+            size: iced::Pixels(10.0),
+            ..Default::default()
+        });
+        frame.fill_text(canvas::Text {
+            content: "均价".to_string(),
+            position: Point::new(plot_left + 5.0, TOP_PAD + 14.0),
+            color: Color::from_rgba(1.0, 0.8, 0.0, 0.7),
+            size: iced::Pixels(9.0),
+            ..Default::default()
+        });
+
         // Time labels
         if n > 0 {
             let fmt_time = |dt: &str| -> String {
