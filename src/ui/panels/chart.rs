@@ -142,12 +142,22 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 } else { text("").into() }
             } else { text("").into() };
 
+            // ── Drawing Tools ──
+            let draw_btn: Element<'_, Message> = if !state.drawing_lines.is_empty() {
+                row![
+                    button(text("清除画线").size(12.0)).on_press(Message::ClearDrawingLines).padding(4).style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style { background: Some(style::palette::BG_LIGHT.into()), text_color: style::palette::TEXT_SECONDARY, ..Default::default() }),
+                    text(format!("{}条画线", state.drawing_lines.len())).size(12.0).color(style::palette::TEXT_ACCENT),
+                ].spacing(4).into()
+            } else {
+                text("点击K线图添加画线").size(12.0).color(style::palette::TEXT_SECONDARY).into()
+            };
+
             // ── Chart ──
             let chart_element: Element<'static, Message> = if !state.daily_bars.is_empty() {
                 let filtered = filter_bars(&state.daily_bars, state.time_range);
                 let period = state.kline_period;
                 let aggregated = aggregate_bars(&filtered, period);
-                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset).into_element()
+                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset, state.drawing_lines.clone()).into_element()
             } else {
                 text("").into()
             };
@@ -161,6 +171,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 range_row,
                 text("").size(2.0),
                 tooltip_row,
+                draw_btn,
                 chart_element,
             ].spacing(2).padding(16);
 

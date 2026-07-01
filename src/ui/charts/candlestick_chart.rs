@@ -135,10 +135,11 @@ pub struct CandlestickCanvas {
     ma60: Vec<Option<f64>>,
     vol_ma5: Vec<Option<f64>>,
     macd: Vec<MacdLine>,
+    drawing_lines: Vec<crate::state::DrawingLine>,
 }
 
 impl CandlestickCanvas {
-    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize) -> Self {
+    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>) -> Self {
         let visible = zoom_level.max(10).min(bars.len().max(10));
         let ma5 = compute_ma(&bars, 5);
         let ma10 = compute_ma(&bars, 10);
@@ -149,7 +150,7 @@ impl CandlestickCanvas {
         Self {
             bars, time_range, scroll_offset: pan_offset, visible_count: visible,
             min_bar_width: 3.0, hovered_index: hovered,
-            ma5, ma10, ma20, ma60, vol_ma5, macd,
+            ma5, ma10, ma20, ma60, vol_ma5, macd, drawing_lines,
         }
     }
 
@@ -232,7 +233,7 @@ impl CandlestickCanvas {
         }
     }
 
-    fn draw_ma_line(&self, frame: &mut Frame, ma: &[Option<f64>], start_global: usize, color: Color, sx: f32, sp: f32, bw: f32, to_px: impl Fn(f64) -> f32) {
+    fn draw_ma_line(&self, frame: &mut Frame, ma: &[Option<f64>], start_global: usize, color: Color, sx: f32, sp: f32, bw: f32, to_px: &dyn Fn(f64) -> f32) {
         if ma.is_empty() { return; }
         let bars = self.get_visible_bars();
         let mut points: Vec<(f32, f32)> = Vec::new();
@@ -315,10 +316,10 @@ impl Program<crate::app::Message> for CandlestickCanvas {
 
         // ── MA lines ──
         let ma_to_px = |p: f64| k_mp(p);
-        self.draw_ma_line(&mut frame, &self.ma5, sg, Color::from_rgb(1.0, 0.8, 0.0), sx, sp, bw, ma_to_px);
-        self.draw_ma_line(&mut frame, &self.ma10, sg, Color::from_rgb(0.3, 0.7, 1.0), sx, sp, bw, ma_to_px);
-        self.draw_ma_line(&mut frame, &self.ma20, sg, Color::from_rgb(1.0, 0.4, 0.7), sx, sp, bw, ma_to_px);
-        self.draw_ma_line(&mut frame, &self.ma60, sg, Color::from_rgb(0.2, 0.8, 0.4), sx, sp, bw, ma_to_px);
+        self.draw_ma_line(&mut frame, &self.ma5, sg, Color::from_rgb(1.0, 0.8, 0.0), sx, sp, bw, &ma_to_px);
+        self.draw_ma_line(&mut frame, &self.ma10, sg, Color::from_rgb(0.3, 0.7, 1.0), sx, sp, bw, &ma_to_px);
+        self.draw_ma_line(&mut frame, &self.ma20, sg, Color::from_rgb(1.0, 0.4, 0.7), sx, sp, bw, &ma_to_px);
+        self.draw_ma_line(&mut frame, &self.ma60, sg, Color::from_rgb(0.2, 0.8, 0.4), sx, sp, bw, &ma_to_px);
 
         // ── Y-axis price labels ──
         for i in 0..5 {
@@ -424,6 +425,23 @@ impl Program<crate::app::Message> for CandlestickCanvas {
             });
         }
 
+        // ── Drawing Lines ──
+        let line_color = Color::from_rgba(0.8, 0.8, 0.3, 0.7);
+        for dl in &self.drawing_lines {
+            let y = k_mp(dl.price);
+            // Draw horizontal line
+            let seg = Path::line(Point::new(sx, y), Point::new(sx + tw, y));
+            frame.stroke(&seg, canvas::Stroke::default().with_color(line_color).with_width(1.0));
+            // Small label
+            frame.fill_text(canvas::Text {
+                content: format!("{:.2}", dl.price),
+                position: Point::new(sx + 2.0, y - 8.0),
+                color: line_color,
+                size: iced::Pixels(9.0),
+                ..Default::default()
+            });
+        }
+
         // ── Crosshair ──
         if let Some(hover_idx) = self.hovered_index {
             let sg2 = lay.start_global;
@@ -471,6 +489,25 @@ impl Program<crate::app::Message> for CandlestickCanvas {
                 Some(canvas::Action::publish(crate::app::Message::HoverBar(Some(sg + idx))))
             }
             canvas::Event::Mouse(iced::mouse::Event::CursorLeft) => Some(canvas::Action::publish(crate::app::Message::HoverBar(None))),
+            canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
+                // Add horizontal line at click position if hovering a bar
+                if let Some(hover_idx) = self.hovered_index {
+                    let bars = self.get_visible_bars();
+                    let sg3 = {
+                        let total = self.bars.len();
+                        let end = total.saturating_sub(self.scroll_offset);
+                        end.saturating_sub(self.visible_count)
+                    };
+                    if hover_idx >= sg3 && hover_idx < sg3 + bars.len() {
+                        let li = hover_idx - sg3;
+                        if li < bars.len() {
+                            let bar = &bars[li];
+                            return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close)));
+                        }
+                    }
+                }
+                None
+            }
             _ => None,
         }
     }

@@ -100,6 +100,13 @@ impl TimeRange {
     }
 }
 
+/// A horizontal or trend line drawn on the chart
+#[derive(Debug, Clone, Copy)]
+pub struct DrawingLine {
+    pub price: f64,
+    pub color: (f32, f32, f32),
+}
+
 pub struct AppState {
     // Search
     pub search_keyword: String,
@@ -121,6 +128,9 @@ pub struct AppState {
     pub time_range: TimeRange,
     pub zoom_level: usize,
     pub pan_offset: usize,
+
+    // Drawing tools
+    pub drawing_lines: Vec<DrawingLine>,
 
     // Watchlist
     pub watchlist: Vec<Stock>,
@@ -163,6 +173,7 @@ impl AppState {
             time_range: TimeRange::OneYear,
             zoom_level: 60,
             pan_offset: 0,
+            drawing_lines: Vec::new(),
             watchlist: Vec::new(),
             active_panel: Panel::default(),
             current_time: Utc::now(),

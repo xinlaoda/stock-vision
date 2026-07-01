@@ -33,6 +33,8 @@ pub enum Message {
     ZoomOut,
     HoverBar(Option<usize>),
     PanBy(f32),
+    AddDrawingLine(f64),
+    ClearDrawingLines,
 }
 
 pub struct StockVision {
@@ -160,6 +162,8 @@ impl StockVision {
             Message::RemoveFromWatchlist(c) => { self.state.remove_from_watchlist(&c); Task::none() }
             Message::PanelChanged(p) => { self.state.active_panel = p; Task::none() }
             Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
+            Message::AddDrawingLine(price) => { self.state.drawing_lines.push(crate::state::DrawingLine { price, color: (0.8, 0.8, 0.3) }); Task::none() }
+            Message::ClearDrawingLines => { self.state.drawing_lines.clear(); Task::none() }
             Message::PanBy(dx) => { 
                 let new_off = (self.state.pan_offset as f32 - dx).max(0.0) as usize;
                 self.state.pan_offset = new_off.min(self.state.daily_bars.len().saturating_sub(self.state.zoom_level));
