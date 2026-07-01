@@ -2,7 +2,7 @@ use iced::widget::{button, column, container, row, text, text_input, Column};
 use iced::{alignment, Element, Fill, Font, Subscription, Task};
 
 use std::sync::Arc;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 
 pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji");
 
@@ -62,6 +62,7 @@ pub enum Message {
     CancelDrawing,
     ToggleTheme,
     ExportCSV,
+    RealtimeQuote(Vec<DailyBar>),
 }
 
 pub struct StockVision {
@@ -104,7 +105,26 @@ impl StockVision {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             // ── Clock ──
-            Message::Tick(now) => { self.state.current_time = now; Task::none() }
+            Message::Tick(now) => { 
+                self.state.current_time = now; 
+                // Poll realtime data every 5 seconds (when second % 5 == 0)
+                // Only when on Chart panel with a selected stock
+                let sec = now.second();
+                if sec % 5 == 0 && self.state.active_panel == Panel::Chart {
+                    if let Some(code) = self.state.selected_stock.clone() {
+                        let exchange = self.state.stock_exchange.clone().unwrap_or(Exchange::SZ);
+                        let svc = self.data_service.clone();
+                        return Task::perform(
+                            async move { svc.load_latest_bars(&code, exchange).await },
+                            |result| match result {
+                                Ok(bars) => Message::RealtimeQuote(bars),
+                                Err(_) => Message::Error("realtime failed".to_string()),
+                            },
+                        );
+                    }
+                }
+                Task::none()
+            }
 
             // ── Search ──
             Message::SearchInputChanged(k) => {
@@ -217,6 +237,27 @@ impl StockVision {
             }
 
             // ── Data ──
+            Message::RealtimeQuote(bars) => {
+                // Only update if we have bars and the last bar changed
+                if let Some(latest) = bars.last() {
+                    if let Some(old_last) = self.state.daily_bars.last() {
+                        if (latest.close - old_last.close).abs() > 0.001 || latest.date != old_last.date {
+                            // Update the last bar in-place if same date, or append if new
+                            let same_date = self.state.daily_bars.last().map(|b| b.date == latest.date).unwrap_or(false);
+                            if same_date {
+                                if let Some(last) = self.state.daily_bars.last_mut() {
+                                    *last = latest.clone();
+                                }
+                            } else {
+                                self.state.daily_bars.push(latest.clone());
+                            }
+                        }
+                    } else {
+                        self.state.daily_bars = bars;
+                    }
+                }
+                Task::none()
+            }
             Message::DailyBarsLoaded(bars) => {
                 self.state.daily_bars = bars;
                 self.state.zoom_level = self.state.daily_bars.len().min(60).max(10);

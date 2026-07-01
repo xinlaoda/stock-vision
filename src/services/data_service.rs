@@ -211,4 +211,20 @@ impl DataService {
 
         Ok(bars)
     }
+
+
+    /// Load the latest daily bars (for realtime quote updates).
+    pub async fn load_latest_bars(
+        &self,
+        code: &str,
+        exchange: Exchange,
+    ) -> anyhow::Result<Vec<DailyBar>> {
+        let bars = self.source
+            .get_daily_bars(code, exchange, None, None, Some(AdjustType::Forward))
+            .await?;
+        if !bars.is_empty() {
+            let _ = self.storage.save_daily_bars(&bars);
+        }
+        Ok(bars)
+    }
 }
