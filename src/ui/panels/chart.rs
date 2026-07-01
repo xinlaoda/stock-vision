@@ -7,31 +7,29 @@ use iced::{Color, Element, Fill};
 use iced::widget::button::Status;
 use iced::Theme;
 
-fn period_style(is_active: bool) -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
-    move |_t: &Theme, _s: Status| {
-        if is_active {
-            iced::widget::button::Style {
-                background: Some(style::palette::ACCENT.into()),
-                text_color: style::palette::TEXT_PRIMARY,
-                ..Default::default()
-            }
-        } else {
-            iced::widget::button::Style::default()
-        }
+/// Style for inactive buttons — visible text on dark bg
+fn inactive_btn_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
+    |_t: &Theme, _s: Status| iced::widget::button::Style {
+        background: Some(style::palette::BG_LIGHT.into()),
+        text_color: style::palette::TEXT_SECONDARY,
+        ..Default::default()
     }
 }
 
-fn range_style(is_active: bool) -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
-    move |_t: &Theme, _s: Status| {
-        if is_active {
-            iced::widget::button::Style {
-                background: Some(style::palette::BG_LIGHT.into()),
-                text_color: style::palette::TEXT_ACCENT,
-                ..Default::default()
-            }
-        } else {
-            iced::widget::button::Style::default()
-        }
+/// Style for active period/range button
+fn active_period_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
+    |_t: &Theme, _s: Status| iced::widget::button::Style {
+        background: Some(style::palette::ACCENT.into()),
+        text_color: Color::WHITE,
+        ..Default::default()
+    }
+}
+
+fn active_range_style() -> impl Fn(&Theme, Status) -> iced::widget::button::Style {
+    |_t: &Theme, _s: Status| iced::widget::button::Style {
+        background: Some(style::palette::ACCENT.into()),
+        text_color: Color::WHITE,
+        ..Default::default()
     }
 }
 
@@ -40,9 +38,9 @@ fn make_period_btn(label: &'static str, period: KlinePeriod, is_active: bool) ->
         .on_press(Message::SetKlinePeriod(period))
         .padding(4);
     if is_active {
-        btn.style(period_style(true))
+        btn.style(active_period_style())
     } else {
-        btn.style(period_style(false))
+        btn.style(inactive_btn_style())
     }
 }
 
@@ -51,9 +49,9 @@ fn make_range_btn(label: &'static str, range: TimeRange, is_active: bool) -> ice
         .on_press(Message::SetTimeRange(range))
         .padding(4);
     if is_active {
-        btn.style(range_style(true))
+        btn.style(active_range_style())
     } else {
-        btn.style(range_style(false))
+        btn.style(inactive_btn_style())
     }
 }
 
@@ -73,18 +71,19 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             let title = format!("{}  {}", state.stock_name.as_deref().unwrap_or(code), code);
             let title_elem = text(title).size(22.0).color(title_color);
 
-            // ── Price summary ──
+            // ── Price summary with visible label colors ──
+            let label_color = style::palette::TEXT_SECONDARY;
             let price_summary: Element<'_, Message> = if !state.daily_bars.is_empty() {
                 let latest = &state.daily_bars[state.daily_bars.len() - 1];
                 let change_pct = (latest.close - latest.open) / latest.open * 100.0;
-                let color = if change_pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+                let change_color = if change_pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
                 row![
-                    metric("最新价", format!("{:.2}", latest.close), 28.0, color),
-                    metric("涨幅", format!("{:.2}%", change_pct), 18.0, color),
-                    metric("开盘", format!("{:.2}", latest.open), 18.0, style::palette::TEXT_PRIMARY),
-                    metric("最高", format!("{:.2}", latest.high), 18.0, style::palette::TEXT_PRIMARY),
-                    metric("最低", format!("{:.2}", latest.low), 18.0, style::palette::TEXT_PRIMARY),
-                    metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, style::palette::TEXT_PRIMARY),
+                    metric("最新价", format!("{:.2}", latest.close), 28.0, label_color, change_color),
+                    metric("涨幅", format!("{:.2}%", change_pct), 18.0, label_color, change_color),
+                    metric("开盘", format!("{:.2}", latest.open), 18.0, label_color, style::palette::TEXT_PRIMARY),
+                    metric("最高", format!("{:.2}", latest.high), 18.0, label_color, style::palette::TEXT_PRIMARY),
+                    metric("最低", format!("{:.2}", latest.low), 18.0, label_color, style::palette::TEXT_PRIMARY),
+                    metric("成交量", format!("{:.0}万", latest.volume / 10000.0), 18.0, label_color, style::palette::TEXT_PRIMARY),
                 ].spacing(24).into()
             } else {
                 text("正在加载数据...").size(14.0).color(style::palette::TEXT_SECONDARY).into()
@@ -109,12 +108,32 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 make_range_btn("全部", TimeRange::Max, state.time_range == TimeRange::Max).into(),
             ]).spacing(4).into();
 
-            // ── Chart ──
+            // ── Hover tooltip bar info (if crosshair active) ──
+            let tooltip_row: Element<'_, Message> = if let Some(idx) = state.hovered_bar_index {
+                if idx < state.daily_bars.len() {
+                    let bar = &state.daily_bars[idx];
+                    let dt = bar.date.format("%Y-%m-%d").to_string();
+                    let clr = |pct: f64| if pct >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+                    let day_change = (bar.close - bar.open) / bar.open * 100.0;
+                    let vag = bar.volume as f64 / 10000.0;
+                    row![
+                        text(dt).size(12.0).color(style::palette::TEXT_ACCENT),
+                        text(format!("开 {:.2}", bar.open)).size(12.0).color(style::palette::TEXT_PRIMARY),
+                        text(format!("高 {:.2}", bar.high)).size(12.0).color(style::palette::RISE),
+                        text(format!("低 {:.2}", bar.low)).size(12.0).color(style::palette::FALL),
+                        text(format!("收 {:.2}", bar.close)).size(12.0).color(style::palette::TEXT_PRIMARY),
+                        text(format!("{:.2}%", day_change)).size(12.0).color(clr(day_change)),
+                        text(format!("量 {:.0}万", vag)).size(12.0).color(style::palette::TEXT_SECONDARY),
+                    ].spacing(16).padding(4).into()
+                } else { text("").into() }
+            } else { text("").into() };
+
+            // ── Chart (receives hovered index for crosshair) ──
             let chart_element: Element<'static, Message> = if !state.daily_bars.is_empty() {
                 let filtered = filter_bars(&state.daily_bars, state.time_range);
                 let period = state.kline_period;
                 let aggregated = aggregate_bars(&filtered, period);
-                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level).into_element()
+                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index).into_element()
             } else {
                 text("").into()
             };
@@ -126,6 +145,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 period_row,
                 range_row,
                 text("").size(2.0),
+                tooltip_row,
                 chart_element,
             ].spacing(2).padding(16);
 
@@ -134,10 +154,10 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     }
 }
 
-fn metric(label: &str, value: String, size: f32, color: Color) -> Element<'_, Message> {
+fn metric(label: &str, value: String, size: f32, label_color: Color, value_color: Color) -> Element<'_, Message> {
     column![
-        text(label).size(12.0).color(style::palette::TEXT_SECONDARY),
-        text(value).size(size).color(color),
+        text(label).size(12.0).color(label_color),
+        text(value).size(size).color(value_color),
     ].into()
 }
 

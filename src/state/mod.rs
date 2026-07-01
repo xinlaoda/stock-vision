@@ -121,6 +121,7 @@ pub struct AppState {
     // UI
     pub active_panel: Panel,
     pub current_time: DateTime<Utc>,
+    pub hovered_bar_index: Option<usize>,
 
     // Storage
     pub storage: Arc<RwLock<Storage>>,
@@ -158,6 +159,7 @@ impl AppState {
             active_panel: Panel::default(),
             current_time: Utc::now(),
             storage: Arc::new(RwLock::new(storage)),
+            hovered_bar_index: None,
         }
     }
 

@@ -31,6 +31,7 @@ pub enum Message {
     SetTimeRange(TimeRange),
     ZoomIn,
     ZoomOut,
+    HoverBar(Option<usize>),
 }
 
 pub struct StockVision {
@@ -143,6 +144,7 @@ impl StockVision {
                 self.state.zoom_level = new_count.max(10).min(max_visible);
                 Task::none()
             }
+            Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
             Message::ZoomOut => {
                 // Zoom out: show more bars
                 let max_visible = self.state.daily_bars.len().min(2000);
