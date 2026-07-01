@@ -2,6 +2,7 @@ use chrono::{DateTime, Datelike, Utc};
 use stock_vision_data_model::*;
 use stock_vision_storage::Storage;
 use crate::services::indicator_service::IndicatorType;
+use crate::ui::style::ThemeMode;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -237,6 +238,7 @@ pub struct AppState {
     pub watchlist: Vec<Stock>,
 
     // UI
+    pub theme_mode: ThemeMode,
     pub active_panel: Panel,
     pub current_time: DateTime<Utc>,
     pub hovered_bar_index: Option<usize>,
@@ -287,6 +289,7 @@ impl AppState {
             browse_history: Vec::new(),
             market_indices: Vec::new(),
             watchlist: watchlist_from_db,
+            theme_mode: ThemeMode::Dark,
             active_panel: Panel::default(),
             current_time: Utc::now(),
             storage: Arc::new(storage),

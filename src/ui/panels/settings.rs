@@ -40,13 +40,21 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
         text("外观设置").size(18.0).color(style::palette::TEXT_PRIMARY),
     );
     content = content.push(
-        text("当前主题: 深色模式 (Dark)")
+        text(format!("当前主题: {}模式", state.theme_mode.label()))
             .size(14.0).color(style::palette::TEXT_SECONDARY),
     );
-    content = content.push(
-        text("亮色主题将在后续版本支持")
-            .size(13.0).color(style::palette::TEXT_SECONDARY),
-    );
+    let toggle_btn = button(
+        text(if state.theme_mode == crate::ui::style::ThemeMode::Dark { "切换到亮色主题" } else { "切换到深色主题" })
+            .size(14.0).color(style::palette::TEXT_PRIMARY)
+    )
+        .on_press(Message::ToggleTheme)
+        .padding(8)
+        .style(|_: &iced::Theme, _: iced::widget::button::Status| iced::widget::button::Style {
+            background: Some(style::palette::ACCENT.into()),
+            text_color: Color::WHITE,
+            ..Default::default()
+        });
+    content = content.push(toggle_btn);
     content = content.push(text("").size(8.0));
 
     // ── 缓存管理 ──

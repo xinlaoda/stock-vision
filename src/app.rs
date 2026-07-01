@@ -60,6 +60,7 @@ pub enum Message {
     SetDrawingToolMode(DrawingToolMode),
     SetDrawingPoint2((usize, f64)),  // second click for trendline/ray
     CancelDrawing,
+    ToggleTheme,
 }
 
 pub struct StockVision {
@@ -333,6 +334,13 @@ impl StockVision {
             }
             Message::CancelDrawing => {
                 self.state.pending_drawing = None;
+                Task::none()
+            }
+            Message::ToggleTheme => {
+                self.state.theme_mode = match self.state.theme_mode {
+                    crate::ui::style::ThemeMode::Dark => crate::ui::style::ThemeMode::Light,
+                    crate::ui::style::ThemeMode::Light => crate::ui::style::ThemeMode::Dark,
+                };
                 Task::none()
             }
             Message::ToggleIndicator(indicator) => {
