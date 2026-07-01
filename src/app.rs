@@ -539,6 +539,36 @@ impl StockVision {
         nav = nav.push(nav_btn("📐", "技术分析", Panel::Technical));
         nav = nav.push(nav_btn("⚙", "设置", Panel::Settings));
 
+        // Stock info + Add to watchlist button (when a stock is selected)
+        let stock_action: Element<Message> = {
+            if let Some(code) = &self.state.selected_stock {
+                let name = self.state.stock_name.as_deref().unwrap_or(code);
+                let in_wl = self.state.watchlist.iter().any(|s| &s.code == code);
+                let exchange = self.state.stock_exchange.as_ref().map(|e| e.prefix()).unwrap_or("");
+                let mut col = column![].spacing(2).padding([4, 8]);
+                col = col.push(text(format!("{} {}.{}", name, exchange, code)).size(12.0).color(t.text_accent));
+                if !in_wl {
+                    col = col.push(
+                        button(text("+ 加入自选").size(11.0))
+                            .on_press(Message::AddToWatchlist)
+                            .padding(4).width(Fill)
+                            .style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style {
+                                background: Some(t.bg_light.into()),
+                                text_color: t.text_accent,
+                                ..Default::default()
+                            })
+                    );
+                } else {
+                    col = col.push(
+                        text("✓ 已在自选").size(11.0).color(t.text_secondary)
+                    );
+                }
+                col.into()
+            } else {
+                text("").into()
+            }
+        };
+
         // Browse history
         let history: Element<Message> = if !self.state.browse_history.is_empty() {
             let mut col = Column::new().spacing(2);
@@ -567,6 +597,7 @@ impl StockVision {
                 .push(sr).push(search_res)
                 .push(text("").size(4.0)).push(nav)
                 .push(text("").size(4.0)).push(history)
+                .push(text("").size(2.0)).push(stock_action)
                 .spacing(2).padding([6, 4])
         )
             .width(220.0)
