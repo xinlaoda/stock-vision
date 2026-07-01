@@ -7,6 +7,7 @@ use tracing::info;
 pub struct DataService {
     kline_source: TencentSource,
     search_source: EastMoneySource,
+    fin_source: EastMoneySource,
     storage: Arc<Storage>,
 }
 
@@ -15,6 +16,7 @@ impl DataService {
         Self {
             kline_source: TencentSource::new(),
             search_source: EastMoneySource::new(),
+            fin_source: EastMoneySource::new(),
             storage,
         }
     }
@@ -24,7 +26,6 @@ impl DataService {
     }
 
     /// Load daily bars with SQLite cache.
-    /// Checks local cache first; if not enough data, fetches from API and caches.
     pub async fn load_daily_bars(
         &self,
         code: &str,
@@ -33,7 +34,6 @@ impl DataService {
         // 1. Check local cache
         let cached = self.storage.get_daily_bars(code, 4000).unwrap_or_default();
 
-        // If we have enough cached data (>= 200 bars), use it directly
         if cached.len() >= 100 {
             info!("Using cached data for {} ({} bars)", code, cached.len());
             return Ok(cached);
@@ -57,13 +57,34 @@ impl DataService {
         Ok(bars)
     }
 
+    /// Load financial reports (uses EastMoney, cached)
     pub async fn load_financial_data(
         &self,
         code: &str,
         exchange: Exchange,
     ) -> anyhow::Result<(Vec<FinancialReport>, ValuationRatios)> {
-        let reports = self.kline_source.get_financial_reports(code, exchange.clone(), None).await?;
-        let valuation = self.kline_source.get_valuation_ratios(code, exchange.clone()).await?;
+        let reports = self.fin_source.get_financial_reports(code, exchange.clone(), None).await?;
+
+        // Cache reports
+        if !reports.is_empty() {
+            if let Err(e) = self.storage.save_financial_reports(&reports) {
+                tracing::warn!("Failed to cache financial reports: {}", e);
+            }
+        }
+
+        let valuation = self.fin_source.get_valuation_ratios(code, exchange.clone()).await?;
         Ok((reports, valuation))
+    }
+
+    /// Load all data for a stock (background sync)
+    pub async fn load_all(&self, code: &str, exchange: Exchange) -> anyhow::Result<()> {
+        // Load and cache daily bars
+        let _ = self.load_daily_bars(code, exchange.clone()).await;
+
+        // Load and cache financial reports
+        let _ = self.load_financial_data(code, exchange.clone()).await;
+
+        info!("Background sync complete for {} ({})", code, exchange.prefix());
+        Ok(())
     }
 }

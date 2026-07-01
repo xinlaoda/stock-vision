@@ -163,7 +163,7 @@ impl AppState {
             None => Storage::in_memory().unwrap(),
         };
 
-        Self {
+        let mut state = Self {
             search_keyword: String::new(),
             search_results: Vec::new(),
             selected_stock: None,
@@ -184,7 +184,10 @@ impl AppState {
             current_time: Utc::now(),
             storage: Arc::new(storage),
             hovered_bar_index: None,
-        }
+        };
+        // Load persisted browse history
+        let _ = state.load_browse_history_from_db();
+        state
     }
 
     pub fn add_to_watchlist(&mut self) {
@@ -206,12 +209,24 @@ impl AppState {
     }
 
     pub fn push_browse_history(&mut self, stock: Stock) {
-        // Remove duplicate if exists
-        self.browse_history.retain(|s| s.code != stock.code);
-        // Add to front
-        self.browse_history.insert(0, stock);
-        // Keep max 20
-        self.browse_history.truncate(20);
+        // Persist to database
+        {
+            let s = self.storage.clone();
+            let st = stock.clone();
+            tokio::spawn(async move {
+                let _ = s.save_browse_entry(&st);
+            });
+        }
+        // Load fresh history from DB (sorted by count desc)
+        if let Ok(history) = self.storage.load_browse_history(20) {
+            self.browse_history = history;
+        }
+    }
+
+    pub fn load_browse_history_from_db(&mut self) {
+        if let Ok(history) = self.storage.load_browse_history(20) {
+            self.browse_history = history;
+        }
     }
 
     pub fn remove_from_watchlist(&mut self, code: &str) {

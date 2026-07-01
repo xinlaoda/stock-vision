@@ -104,6 +104,15 @@ impl StockVision {
                 let code = stock.code.clone();
                 let exchange = stock.exchange.clone();
                 let ds = self.data_service.clone();
+
+                // Background sync: preload all data into cache
+                let ds2 = self.data_service.clone();
+                let code2 = code.clone();
+                let ex2 = exchange.clone();
+                tokio::spawn(async move {
+                    let _ = ds2.load_all(&code2, ex2).await;
+                });
+
                 Task::perform(
                     async move { ds.load_daily_bars(&code, exchange).await.unwrap_or_default() },
                     Message::DailyBarsLoaded,

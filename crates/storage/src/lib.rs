@@ -55,12 +55,23 @@ impl Storage {
                 PRIMARY KEY (code, report_date)
             );
 
+            CREATE TABLE IF NOT EXISTS browse_history (
+                code TEXT NOT NULL,
+                name TEXT NOT NULL,
+                exchange TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 1,
+                last_access TEXT NOT NULL,
+                PRIMARY KEY (code, exchange)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_daily_bars_code_date 
             ON daily_bars(code, date);
             ",
         )?;
         Ok(())
     }
+
+    // ── Daily bars cache ──
 
     pub fn save_daily_bars(&self, bars: &[DailyBar]) -> Result<()> {
         let conn = self.conn.lock().unwrap();
@@ -70,14 +81,8 @@ impl Storage {
         )?;
         for bar in bars {
             stmt.execute(rusqlite::params![
-                bar.code,
-                bar.date.format("%Y-%m-%d").to_string(),
-                bar.open,
-                bar.high,
-                bar.low,
-                bar.close,
-                bar.volume,
-                bar.amount,
+                bar.code, bar.date.format("%Y-%m-%d").to_string(),
+                bar.open, bar.high, bar.low, bar.close, bar.volume, bar.amount,
             ])?;
         }
         Ok(())
@@ -87,21 +92,14 @@ impl Storage {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare_cached(
             "SELECT code, date, open, high, low, close, volume, amount
-             FROM daily_bars
-             WHERE code = ?1
-             ORDER BY date DESC
-             LIMIT ?2",
+             FROM daily_bars WHERE code = ?1 ORDER BY date DESC LIMIT ?2",
         )?;
         let rows = stmt.query_map(rusqlite::params![code, limit as i64], |row| {
             Ok(DailyBar {
                 code: row.get(0)?,
                 date: NaiveDate::parse_from_str(&row.get::<_, String>(1)?, "%Y-%m-%d").unwrap(),
-                open: row.get(2)?,
-                high: row.get(3)?,
-                low: row.get(4)?,
-                close: row.get(5)?,
-                volume: row.get(6)?,
-                amount: row.get(7)?,
+                open: row.get(2)?, high: row.get(3)?, low: row.get(4)?,
+                close: row.get(5)?, volume: row.get(6)?, amount: row.get(7)?,
                 change_pct: None,
             })
         })?;
@@ -109,6 +107,71 @@ impl Storage {
         bars.reverse();
         Ok(bars)
     }
+
+    // ── Financial reports cache ──
+
+    pub fn save_financial_reports(&self, reports: &[FinancialReport]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
+            "INSERT OR REPLACE INTO cached_reports (code, report_date, data) VALUES (?1, ?2, ?3)",
+        )?;
+        for report in reports {
+            let data = serde_json::to_string(report)?;
+            stmt.execute(rusqlite::params![
+                report.code,
+                report.report_date.format("%Y-%m-%d").to_string(),
+                data,
+            ])?;
+        }
+        Ok(())
+    }
+
+    pub fn get_financial_reports(&self, code: &str) -> Result<Vec<FinancialReport>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
+            "SELECT data FROM cached_reports WHERE code = ?1 ORDER BY report_date DESC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![code], |row| {
+            Ok(serde_json::from_str::<FinancialReport>(&row.get::<_, String>(0)?).unwrap())
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    // ── Browse history ──
+
+    pub fn save_browse_entry(&self, stock: &Stock) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO browse_history (code, name, exchange, count, last_access) VALUES (?1, ?2, ?3, 1, ?4)
+             ON CONFLICT(code, exchange) DO UPDATE SET count = count + 1, last_access = ?5, name = ?2",
+            rusqlite::params![stock.code, stock.name, format!("{:?}", stock.exchange), now, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_browse_history(&self, limit: usize) -> Result<Vec<Stock>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
+            "SELECT code, name, exchange FROM browse_history ORDER BY count DESC, last_access DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+            let exchange_str: String = row.get(2)?;
+            let exchange = match exchange_str.as_str() {
+                "SH" => Exchange::SH,
+                "SZ" => Exchange::SZ,
+                _ => Exchange::SZ,
+            };
+            Ok(Stock {
+                code: row.get(0)?, name: row.get(1)?, exchange,
+                sector: None, industry: None, list_date: None,
+                total_shares: None, float_shares: None,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    // ── Watchlists ──
 
     pub fn save_watchlist(&self, watchlist: &Watchlist) -> Result<()> {
         let stocks_json = serde_json::to_string(&watchlist.stocks)?;
