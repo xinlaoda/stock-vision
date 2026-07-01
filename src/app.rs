@@ -174,13 +174,13 @@ impl StockVision {
         }
     }
 
-    pub fn view(pub fn view(&self) -> Element<Message> {self) -> Element<'_, Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let sidebar = self.view_sidebar();
         let main = self.view_main_content();
         container(row(vec![sidebar, main])).width(Fill).height(Fill).into()
     }
 
-    fn view_sidebar(fn view_sidebar(&self) -> Element<Message> {self) -> Element<'_, Message> {
+    fn view_sidebar(&self) -> Element<'_, Message> {
         let sr = row![
             text_input("输入代码(如000001)或名称", &self.state.search_keyword)
                 .on_input(Message::SearchInputChanged)
@@ -236,7 +236,7 @@ impl StockVision {
         ).width(220).height(Fill).style(style::sidebar()).into()
     }
 
-    fn view_main_content(fn view_main_content(&self) -> Element<Message> {self) -> Element<'_, Message> {
+    fn view_main_content(&self) -> Element<'_, Message> {
         let content = match self.state.active_panel {
             Panel::Watchlist => panels::watchlist::view(&self.state),
             Panel::Chart => panels::chart::view(&self.state),

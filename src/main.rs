@@ -19,6 +19,7 @@ fn main() -> iced::Result {
             min_size: Some(Size::new(900.0, 600.0)),
             ..Default::default()
         })
+        .default_font(iced::Font::with_name("Microsoft YaHei"))
         .subscription(app::StockVision::subscription)
         .run()
 }
