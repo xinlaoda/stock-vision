@@ -19,6 +19,81 @@ impl Default for Panel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum KlinePeriod {
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+impl KlinePeriod {
+    pub fn label(&self) -> &str {
+        match self {
+            KlinePeriod::Daily => "日K",
+            KlinePeriod::Weekly => "周K",
+            KlinePeriod::Monthly => "月K",
+            KlinePeriod::Yearly => "年K",
+        }
+    }
+
+    /// Convert to Tencent kline type parameter
+    pub fn tencent_param(&self) -> &str {
+        match self {
+            KlinePeriod::Daily => "day",
+            KlinePeriod::Weekly => "week",
+            KlinePeriod::Monthly => "month",
+            KlinePeriod::Yearly => "year",
+        }
+    }
+
+    pub fn max_bars(&self) -> u32 {
+        match self {
+            KlinePeriod::Daily => 2000,
+            KlinePeriod::Weekly => 500,
+            KlinePeriod::Monthly => 200,
+            KlinePeriod::Yearly => 50,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimeRange {
+    OneMonth,
+    ThreeMonths,
+    SixMonths,
+    OneYear,
+    TwoYears,
+    FiveYears,
+    Max,
+}
+
+impl TimeRange {
+    pub fn label(&self) -> &str {
+        match self {
+            TimeRange::OneMonth => "1月",
+            TimeRange::ThreeMonths => "3月",
+            TimeRange::SixMonths => "6月",
+            TimeRange::OneYear => "1年",
+            TimeRange::TwoYears => "2年",
+            TimeRange::FiveYears => "5年",
+            TimeRange::Max => "全部",
+        }
+    }
+
+    pub fn days(&self) -> i64 {
+        match self {
+            TimeRange::OneMonth => 30,
+            TimeRange::ThreeMonths => 90,
+            TimeRange::SixMonths => 180,
+            TimeRange::OneYear => 365,
+            TimeRange::TwoYears => 730,
+            TimeRange::FiveYears => 1825,
+            TimeRange::Max => 99999,
+        }
+    }
+}
+
 pub struct AppState {
     // Search
     pub search_keyword: String,
@@ -34,6 +109,11 @@ pub struct AppState {
     pub financial_reports: Vec<FinancialReport>,
     pub valuation: Option<ValuationRatios>,
     pub financial_health: Option<FinancialHealth>,
+
+    // Chart settings
+    pub kline_period: KlinePeriod,
+    pub time_range: TimeRange,
+    pub zoom_level: usize,
 
     // Watchlist
     pub watchlist: Vec<Stock>,
@@ -71,6 +151,9 @@ impl AppState {
             financial_reports: Vec::new(),
             valuation: None,
             financial_health: None,
+            kline_period: KlinePeriod::Daily,
+            time_range: TimeRange::OneYear,
+            zoom_level: 60,
             watchlist: Vec::new(),
             active_panel: Panel::default(),
             current_time: Utc::now(),

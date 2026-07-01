@@ -1,6 +1,3 @@
-use iced::border::Border;
-use iced::{Background, Color, Shadow};
-
 pub mod palette {
     use iced::Color;
     pub const BG_DARK: Color = Color::from_rgb(0.07, 0.07, 0.10);

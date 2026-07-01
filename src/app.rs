@@ -1,5 +1,5 @@
 use iced::widget::{button, column, container, row, text, text_input, Column};
-use iced::{alignment, Alignment, Color, Element, Fill, Font, Subscription, Task};
+use iced::{alignment, Element, Fill, Font, Subscription, Task};
 
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
@@ -10,7 +10,7 @@ use stock_vision_data_model::*;
 use stock_vision_data_source::{DataSource, EastMoneySource, TencentSource};
 use stock_vision_analysis_core::FinancialAnalyzer;
 
-use crate::state::{AppState, Panel};
+use crate::state::{AppState, KlinePeriod, Panel, TimeRange};
 use crate::ui::{panels, style};
 
 #[derive(Debug, Clone)]
@@ -26,6 +26,11 @@ pub enum Message {
     AddToWatchlist,
     RemoveFromWatchlist(String),
     Tick(DateTime<Utc>),
+    // Chart controls
+    SetKlinePeriod(KlinePeriod),
+    SetTimeRange(TimeRange),
+    ZoomIn,
+    ZoomOut,
 }
 
 pub struct StockVision {
@@ -57,23 +62,25 @@ impl StockVision {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            // ── Clock ──
             Message::Tick(now) => { self.state.current_time = now; Task::none() }
 
-            Message::SearchInputChanged(keyword) => {
-                self.state.search_keyword = keyword;
+            // ── Search ──
+            Message::SearchInputChanged(k) => {
+                self.state.search_keyword = k;
                 self.state.search_results.clear();
                 Task::none()
             }
             Message::SearchSubmitted => {
                 let raw = self.state.search_keyword.clone();
-                let keyword = raw.trim().to_string();
-                if keyword.is_empty() { return Task::none(); }
-                let cleaned = keyword.trim_start_matches(|c: char| c.is_alphabetic()).to_string();
-                let search_term = if cleaned.is_empty() { keyword } else { cleaned };
-                let source = self.search_source.clone();
+                let kw = raw.trim().to_string();
+                if kw.is_empty() { return Task::none(); }
+                let clean = kw.trim_start_matches(|c: char| c.is_alphabetic()).to_string();
+                let term = if clean.is_empty() { kw } else { clean };
+                let s = self.search_source.clone();
                 self.state.search_results.clear();
                 Task::perform(
-                    async move { source.search_stocks(&search_term).await.unwrap_or_default() },
+                    async move { s.search_stocks(&term).await.unwrap_or_default() },
                     Message::SearchResultsLoaded,
                 )
             }
@@ -88,39 +95,72 @@ impl StockVision {
                 self.state.stock_name = Some(stock.name.clone());
                 self.state.stock_exchange = Some(stock.exchange.clone());
                 self.state.active_panel = Panel::Chart;
+                self.state.kline_period = KlinePeriod::Daily;
+                self.state.time_range = TimeRange::OneYear;
+                self.state.daily_bars.clear();
                 let code = stock.code.clone();
                 let exchange = stock.exchange.clone();
-                let source = self.kline_source.clone();
-                self.state.daily_bars.clear();
+                let s = self.kline_source.clone();
                 Task::perform(
-                    async move {
-                        source.get_daily_bars(&code, exchange, None, None, None)
-                            .await.unwrap_or_default()
-                    },
+                    async move { s.get_daily_bars(&code, exchange, None, None, None).await.unwrap_or_default() },
                     Message::DailyBarsLoaded,
                 )
             }
-            Message::PanelChanged(panel) => {
-                let is_fundamental = panel == Panel::Fundamental;
-                let needs_load = is_fundamental && self.state.selected_stock.is_some() && self.state.financial_reports.is_empty();
-                self.state.active_panel = panel;
-                if needs_load {
-                    let code = self.state.selected_stock.clone().unwrap();
-                    let source = self.fin_source.clone();
-                    Task::perform(
-                        async move {
-                            source.get_financial_reports(&code, Exchange::SZ, None)
-                                .await.unwrap_or_default()
-                        },
-                        Message::FinancialDataLoaded,
-                    )
-                } else { Task::none() }
+
+            // ── Chart Controls ──
+            Message::SetKlinePeriod(period) => {
+                self.state.kline_period = period;
+                if let (Some(code), Some(ex)) = (&self.state.selected_stock, &self.state.stock_exchange) {
+                    self.state.daily_bars.clear();
+                    let code = code.clone();
+                    let exchange = ex.clone();
+                    let s = self.kline_source.clone();
+                    return Task::perform(
+                        async move { s.get_daily_bars(&code, exchange, None, None, None).await.unwrap_or_default() },
+                        Message::DailyBarsLoaded,
+                    );
+                }
+                Task::none()
             }
-            Message::DailyBarsLoaded(bars) => { self.state.daily_bars = bars; Task::none() }
+            Message::SetTimeRange(range) => {
+                self.state.time_range = range;
+                if let (Some(code), Some(ex)) = (&self.state.selected_stock, &self.state.stock_exchange) {
+                    self.state.daily_bars.clear();
+                    let code = code.clone();
+                    let exchange = ex.clone();
+                    let s = self.kline_source.clone();
+                    return Task::perform(
+                        async move { s.get_daily_bars(&code, exchange, None, None, None).await.unwrap_or_default() },
+                        Message::DailyBarsLoaded,
+                    );
+                }
+                Task::none()
+            }
+            Message::ZoomIn => {
+                // Zoom in: show fewer bars
+                let max_visible = self.state.daily_bars.len().min(120);
+                let new_count = (self.state.zoom_level as f32 * 1.3) as usize;
+                self.state.zoom_level = new_count.max(10).min(max_visible);
+                Task::none()
+            }
+            Message::ZoomOut => {
+                // Zoom out: show more bars
+                let max_visible = self.state.daily_bars.len().min(2000);
+                let new_count = (self.state.zoom_level as f32 / 1.3) as usize;
+                self.state.zoom_level = new_count.max(10).min(max_visible);
+                Task::none()
+            }
+
+            // ── Data ──
+            Message::DailyBarsLoaded(bars) => {
+                self.state.daily_bars = bars;
+                self.state.zoom_level = self.state.daily_bars.len().min(60).max(10);
+                Task::none()
+            }
             Message::FinancialDataLoaded(reports) => {
                 self.state.financial_reports = reports;
-                if let Some(report) = self.state.financial_reports.first() {
-                    self.state.financial_health = Some(self.analyzer.score(report, &ValuationRatios {
+                if let Some(r) = self.state.financial_reports.first() {
+                    self.state.financial_health = Some(self.analyzer.score(r, &ValuationRatios {
                         code: String::new(), date: Utc::now().date_naive(),
                         pe: Some(15.0), pb: Some(2.0), ps: None, pcf: None, market_cap: None, dividend_yield: None,
                     }));
@@ -128,42 +168,38 @@ impl StockVision {
                 Task::none()
             }
             Message::AddToWatchlist => { self.state.add_to_watchlist(); Task::none() }
-            Message::RemoveFromWatchlist(code) => { self.state.remove_from_watchlist(&code); Task::none() }
+            Message::RemoveFromWatchlist(c) => { self.state.remove_from_watchlist(&c); Task::none() }
+            Message::PanelChanged(p) => { self.state.active_panel = p; Task::none() }
             Message::Error(_) => Task::none(),
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(pub fn view(&self) -> Element<Message> {self) -> Element<'_, Message> {
         let sidebar = self.view_sidebar();
-        let main_content = self.view_main_content();
-        container(row(vec![sidebar, main_content]))
-            .width(Fill).height(Fill)
-            .into()
+        let main = self.view_main_content();
+        container(row(vec![sidebar, main])).width(Fill).height(Fill).into()
     }
 
-    fn view_sidebar(&self) -> Element<Message> {
-        let search_row = row![
+    fn view_sidebar(fn view_sidebar(&self) -> Element<Message> {self) -> Element<'_, Message> {
+        let sr = row![
             text_input("输入代码(如000001)或名称", &self.state.search_keyword)
                 .on_input(Message::SearchInputChanged)
                 .on_submit(Message::SearchSubmitted)
                 .padding(8).size(13.0),
-            button(text("搜索").size(12.0))
-                .on_press(Message::SearchSubmitted)
-                .padding(8),
+            button(text("搜索").size(12.0)).on_press(Message::SearchSubmitted).padding(8),
         ].spacing(6).align_y(alignment::Vertical::Center);
 
-        let search_results: Element<Message> = if !self.state.search_results.is_empty() {
+        let search_res: Element<Message> = if !self.state.search_results.is_empty() {
             let list: Vec<Element<Message>> = self.state.search_results.iter().map(|s| {
-                let label = format!("{}.{}  {}", s.exchange.prefix(), s.code, s.name);
-                button(text(label).size(13.0))
+                let lbl = format!("{}.{}  {}", s.exchange.prefix(), s.code, s.name);
+                button(text(lbl).size(13.0))
                     .on_press(Message::SearchResultSelected(s.clone()))
-                    .width(Fill).padding(6)
-                    .into()
+                    .width(Fill).padding(6).into()
             }).collect();
             column(list).spacing(2).into()
         } else { text("").into() };
 
-        let stock_indicator: Element<Message> = match &self.state.stock_name {
+        let indicator: Element<Message> = match &self.state.stock_name {
             Some(name) => {
                 let in_wl = self.state.selected_stock.as_ref().map_or(false, |c| self.state.watchlist.iter().any(|s| &s.code == c));
                 row![
@@ -174,39 +210,33 @@ impl StockVision {
             None => text("").into(),
         };
 
-        let add_wl_btn: Element<Message> = {
+        let add_btn: Element<Message> = {
             let has = self.state.selected_stock.is_some();
             let already = self.state.selected_stock.as_ref().map_or(false, |c| self.state.watchlist.iter().any(|s| &s.code == c));
             if has && !already {
-                button(text("+ 加入自选").size(12.0))
-                    .on_press(Message::AddToWatchlist)
-                    .padding(6).width(Fill).into()
+                button(text("+ 加入自选").size(12.0)).on_press(Message::AddToWatchlist).padding(6).width(Fill).into()
             } else { text("").into() }
         };
 
-        let panel_buttons = Column::new()
-            .push(nav_button("📊", "自选股", Panel::Watchlist))
-            .push(nav_button("📈", "行情走势", Panel::Chart))
-            .push(nav_button("📋", "基本面分析", Panel::Fundamental))
-            .push(nav_button("📐", "技术分析", Panel::Technical))
-            .push(nav_button("⚙", "设置", Panel::Settings))
+        let nav = Column::new()
+            .push(nav_btn("📊", "自选股", Panel::Watchlist))
+            .push(nav_btn("📈", "行情走势", Panel::Chart))
+            .push(nav_btn("📋", "基本面分析", Panel::Fundamental))
+            .push(nav_btn("📐", "技术分析", Panel::Technical))
+            .push(nav_btn("⚙", "设置", Panel::Settings))
             .spacing(4);
 
         container(
             Column::new()
                 .push(text("Stock Vision").size(20.0))
                 .push(text("").size(4.0))
-                .push(search_row).push(search_results)
-                .push(stock_indicator).push(add_wl_btn)
-                .push(text("").size(8.0)).push(panel_buttons)
+                .push(sr).push(search_res).push(indicator).push(add_btn)
+                .push(text("").size(8.0)).push(nav)
                 .spacing(6).padding(16),
-        )
-        .width(220).height(Fill)
-        .style(style::sidebar())
-        .into()
+        ).width(220).height(Fill).style(style::sidebar()).into()
     }
 
-    fn view_main_content(&self) -> Element<Message> {
+    fn view_main_content(fn view_main_content(&self) -> Element<Message> {self) -> Element<'_, Message> {
         let content = match self.state.active_panel {
             Panel::Watchlist => panels::watchlist::view(&self.state),
             Panel::Chart => panels::chart::view(&self.state),
@@ -214,21 +244,17 @@ impl StockVision {
             Panel::Technical => panels::technical::view(&self.state),
             Panel::Settings => panels::settings::view(&self.state),
         };
-        let time_str = self.state.current_time.format("%Y-%m-%d %H:%M:%S").to_string();
-        let clock_bar = row![text("").width(Fill), text(time_str).size(13.0)].padding(8);
-        container(column![clock_bar, content].width(Fill).height(Fill))
-            .width(Fill).height(Fill)
-            .style(style::panel())
-            .into()
+        let ts = self.state.current_time.format("%Y-%m-%d %H:%M:%S").to_string();
+        let clock = row![text("").width(Fill), text(ts).size(13.0)].padding(8);
+        container(column![clock, content].width(Fill).height(Fill))
+            .width(Fill).height(Fill).style(style::panel()).into()
     }
 }
 
-fn nav_button(icon: &'static str, label: &'static str, panel: Panel) -> iced::widget::Button<'static, Message> {
-    let content = row![
+fn nav_btn<'a>(icon: &'static str, label: &'static str, panel: Panel) -> iced::widget::Button<'a, Message> {
+    let c = row![
         text(icon).font(EMOJI_FONT).size(15.0),
         text(label).size(15.0),
     ].spacing(8).align_y(alignment::Vertical::Center);
-    button(content)
-        .on_press(Message::PanelChanged(panel))
-        .width(Fill).padding(8)
+    button(c).on_press(Message::PanelChanged(panel)).width(Fill).padding(8)
 }
