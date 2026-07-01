@@ -1,6 +1,6 @@
 # Stock Vision
 
-跨平台桌面 A 股分析工具 — 基本面分析 + 技术分析 + 实时行情。
+跨平台桌面股票分析工具 — A股 + 美股，基本面分析 + 技术分析 + 实时行情。
 
 ## 功能一览
 
@@ -53,7 +53,7 @@
 | **网络** | reqwest | HTTP 数据源 |
 | **存储** | SQLite (rusqlite) | 数据缓存 + 持久化 |
 | **运行时** | Tokio | 异步数据加载 |
-| **数据源** | 腾讯财经 + 东方财富 (双源 Fallback) | A 股实时 + 历史 |
+| **数据源** | 腾讯/东方财富(A股) + Yahoo/Finnhub(美股) 多源 Fallback | A股+美股实时+历史 |
 
 ## 架构
 
@@ -80,8 +80,8 @@ stock-vision/
 │       ├── analysis_service.rs # 分析服务
 │       └── indicator_service.rs # 指标计算服务
 ├── crates/
-│   ├── data-model/           # 领域模型 (Stock/DailyBar/FinancialReport)
-│   ├── data-source/          # 数据源 (Tencent/EastMoney/Mock + FallbackSource)
+│   ├── data-model/           # 领域模型 (Stock/DailyBar/FinancialReport/Exchange)
+│   ├── data-source/          # 数据源 (Tencent/EastMoney/Yahoo/Finnhub/Mock + FallbackSource)
 │   ├── indicator-core/       # 技术指标计算 (SMA/EMA/MACD/RSI/KDJ/BOLL)
 │   ├── analysis-core/        # 基本面分析/财务健康评分
 │   ├── chart-engine/         # 图表引擎 (plotters 封装，备用)
@@ -95,7 +95,11 @@ stock-vision/
 git clone https://github.com/xinlaoda/stock-vision.git
 cd stock-vision
 
-# 运行开发版本
+# 运行开发版本（A股数据无需配置，开箱即用）
+cargo run
+
+# 启用美股 Finnhub 数据（可选，注册 https://finnhub.io/register）
+export FINNHUB_API_KEY="your_api_key_here"
 cargo run
 
 # 发布构建
@@ -104,10 +108,13 @@ cargo build --release
 
 ### Windows 注意事项
 
-项目在 Linux 上开发，通过 Git 同步到 Windows：
 ```bash
 # Windows 端
 git pull
+
+# 设置 Finnhub key（可选）
+$env:FINNHUB_API_KEY="your_api_key_here"
+
 cargo run
 ```
 
@@ -115,6 +122,7 @@ cargo run
 
 ## 数据源
 
+### A股
 | 功能 | 主源 | 备源 | 
 |------|------|------|
 | 股票搜索 | 东方财富 `searchadapter.eastmoney.com` | - |
@@ -123,12 +131,24 @@ cargo run
 | 基本面 | 东方财富 `datacenter.eastmoney.com` | - |
 | 实时行情 | 腾讯财经 (每5秒轮询) | - |
 
+### 美股
+| 功能 | 主源 | 备源 | 
+|------|------|------|
+| 股票搜索 | EastMoney → Yahoo → Finnhub（三级fallback） | - |
+| 日K/周K/月K线 | Finnhub（有key时） | Yahoo Finance（无条件fallback） |
+| 基本面 | Finnhub（需API key） | - |
+| 估值(PE/PB) | Finnhub（需API key） | - |
+
+> **Finnhub**: 免费注册 https://finnhub.io/register，设置环境变量 `FINNHUB_API_KEY` 即可启用更全面的美股数据（基本面/估值/实时）。
+> **Yahoo Finance**: 免费无需注册，数据可靠但非官方API，延迟约15分钟。
+
 所有数据源采用 **Fallback 策略**，主源失败自动切换到备源。
 
 ## 技术特色
 
-- **双源 Fallback**: 多个数据源冗余，一个失败自动切换
-- **智能缓存**: 已缓存数据不重复请求网络
+- **多源 Fallback**: 4个数据源冗余，自动切换（Tencent → EastMoney → Finnhub → Yahoo）
+- **智能缓存**: SQLite本地缓存，已缓存数据不重复请求网络
+- **A股+美股**: 自动识别交易所，选择对应数据源
 - **响应式布局**: 首页指数卡片根据窗口宽度自适应 1/2 列
 - **跨平台**: 一次编写，Windows/macOS/Linux 均可编译运行
 
