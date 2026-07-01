@@ -120,6 +120,45 @@ pub struct MarketIndexData {
     pub bars: Vec<stock_vision_data_model::DailyBar>,
 }
 
+/// Configurable indicator parameters
+#[derive(Debug, Clone, Copy)]
+pub struct IndicatorParams {
+    // MA
+    pub ma_periods: [usize; 4],   // MA5, MA10, MA20, MA60
+    pub vol_ma_period: usize,
+    // MACD
+    pub macd_fast: usize,
+    pub macd_slow: usize,
+    pub macd_signal: usize,
+    // BOLL
+    pub boll_period: usize,
+    pub boll_std: f64,
+    // KDJ
+    pub kdj_n: usize,
+    pub kdj_m1: usize,
+    pub kdj_m2: usize,
+    // RSI
+    pub rsi_period: usize,
+}
+
+impl Default for IndicatorParams {
+    fn default() -> Self {
+        Self {
+            ma_periods: [5, 10, 20, 60],
+            vol_ma_period: 5,
+            macd_fast: 12,
+            macd_slow: 26,
+            macd_signal: 9,
+            boll_period: 20,
+            boll_std: 2.0,
+            kdj_n: 9,
+            kdj_m1: 3,
+            kdj_m2: 3,
+            rsi_period: 14,
+        }
+    }
+}
+
 pub struct AppState {
     // Search
     pub search_keyword: String,
@@ -149,6 +188,7 @@ pub struct AppState {
 
     // Technical indicators
     pub active_indicators: Vec<IndicatorType>,
+    pub indicator_params: IndicatorParams,
 
     // Browse history
     pub browse_history: Vec<Stock>,
@@ -204,6 +244,7 @@ impl AppState {
             pan_offset: 0,
             drawing_lines: Vec::new(),
             active_indicators: vec![IndicatorType::MACD],  // MACD enabled by default
+            indicator_params: IndicatorParams::default(),
             browse_history: Vec::new(),
             market_indices: Vec::new(),
             watchlist: watchlist_from_db,

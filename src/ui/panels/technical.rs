@@ -104,7 +104,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 );
 
                 for indicator in &state.active_indicators {
-                    if let Some(computed) = compute_indicator(*indicator, &state.daily_bars) {
+                    if let Some(computed) = compute_indicator(*indicator, &state.daily_bars, &state.indicator_params) {
                         let last_idx = computed.line1.len().saturating_sub(1);
                         let val1 = computed.line1.get(last_idx).copied().flatten();
                         let val2 = computed.line2.get(last_idx).copied().flatten();
@@ -123,6 +123,49 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     }
                 }
             }
+
+            // ── Parameter Configuration ──
+            content = content.push(text("").size(8.0));
+            content = content.push(render_divider());
+            content = content.push(
+                text("参数配置 (点击数字调整)").size(16.0).color(style::palette::TEXT_PRIMARY),
+            );
+
+            let p = &state.indicator_params;
+
+            // MA Parameters
+            content = content.push(text("移动均线(MA)").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(param_row("MA1周期", p.ma_periods[0], 2, 120, |v| Message::SetMAPeriod(0, v)));
+            content = content.push(param_row("MA2周期", p.ma_periods[1], 2, 120, |v| Message::SetMAPeriod(1, v)));
+            content = content.push(param_row("MA3周期", p.ma_periods[2], 2, 120, |v| Message::SetMAPeriod(2, v)));
+            content = content.push(param_row("MA4周期", p.ma_periods[3], 2, 120, |v| Message::SetMAPeriod(3, v)));
+            content = content.push(param_row("量MA周期", p.vol_ma_period, 2, 60, |v| Message::SetVolMAPeriod(v)));
+
+            // MACD Parameters
+            content = content.push(text("").size(4.0));
+            content = content.push(text("MACD").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(param_row("快线(EMA)", p.macd_fast, 2, 60, |v| Message::SetMACDFast(v)));
+            content = content.push(param_row("慢线(EMA)", p.macd_slow, 5, 120, |v| Message::SetMACDSlow(v)));
+            content = content.push(param_row("信号(MA)", p.macd_signal, 2, 60, |v| Message::SetMACDSignal(v)));
+
+            // BOLL Parameters
+            content = content.push(text("").size(4.0));
+            content = content.push(text("布林带(BOLL)").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(param_row("周期", p.boll_period, 2, 120, |v| Message::SetBOLLPeriod(v)));
+            content = content.push(param_row_f64("标准差", p.boll_std, 0.5, 5.0, 0.5, |v| Message::SetBOLLStd(v)));
+
+            // KDJ Parameters
+            content = content.push(text("").size(4.0));
+            content = content.push(text("KDJ").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(param_row("RSV周期(N)", p.kdj_n, 2, 60, |v| Message::SetKDJ_N(v)));
+            content = content.push(param_row("K平滑(M1)", p.kdj_m1, 2, 30, |v| Message::SetKDJ_M1(v)));
+            content = content.push(param_row("D平滑(M2)", p.kdj_m2, 2, 30, |v| Message::SetKDJ_M2(v)));
+
+            // RSI Parameters
+            content = content.push(text("").size(4.0));
+            content = content.push(text("RSI").size(14.0).color(style::palette::TEXT_ACCENT));
+            content = content.push(param_row("周期", p.rsi_period, 2, 60, |v| Message::SetRSIPeriod(v)));
+
 
             // ── Description ──
             content = content.push(text("").size(12.0));
@@ -159,6 +202,46 @@ fn render_divider() -> Element<'static, Message> {
         background: Some(style::palette::BG_LIGHT.into()),
         ..Default::default()
     }).into()
+}
+
+/// Parameter adjustment button: decrease / value / increase
+fn param_row(label: &'static str, value: usize, min: usize, max: usize, msg: impl Fn(usize) -> Message + 'static) -> Element<'static, Message> {
+    use iced::widget::{row, text, button, container};
+    
+    let dec = button(text("-").size(14.0))
+        .on_press(msg(value.saturating_sub(1).max(min)))
+        .padding(4).width(28);
+    let inc = button(text("+").size(14.0))
+        .on_press(msg((value + 1).min(max)))
+        .padding(4).width(28);
+    let val = container(
+        text(value.to_string()).size(14.0).color(style::palette::TEXT_PRIMARY)
+    ).width(40).center_x(Fill);
+    
+    row![
+        text(label).size(13.0).color(style::palette::TEXT_SECONDARY).width(100),
+        dec, val, inc,
+    ].spacing(4).align_y(iced::alignment::Vertical::Center).into()
+}
+
+/// Parameter adjustment button for f64 values
+fn param_row_f64(label: &'static str, value: f64, min: f64, max: f64, step: f64, msg: impl Fn(f64) -> Message + 'static) -> Element<'static, Message> {
+    use iced::widget::{row, text, button, container};
+    
+    let dec = button(text("-").size(14.0))
+        .on_press(msg((value - step).max(min)))
+        .padding(4).width(28);
+    let inc = button(text("+").size(14.0))
+        .on_press(msg((value + step).min(max)))
+        .padding(4).width(28);
+    let val = container(
+        text(format!("{:.1}", value)).size(14.0).color(style::palette::TEXT_PRIMARY)
+    ).width(40).center_x(Fill);
+    
+    row![
+        text(label).size(13.0).color(style::palette::TEXT_SECONDARY).width(100),
+        dec, val, inc,
+    ].spacing(4).align_y(iced::alignment::Vertical::Center).into()
 }
 
 fn format_val(v: Option<f64>) -> String {

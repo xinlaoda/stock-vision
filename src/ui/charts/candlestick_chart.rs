@@ -75,11 +75,11 @@ fn compute_volume_ma(bars: &[DailyBar], period: usize) -> Vec<Option<f64>> {
 
 /// Compute Bollinger Bands (20, 2).
 /// Returns (upper, middle, lower) as Vec<Option<f64>>.
-fn compute_bollinger(bars: &[DailyBar]) -> (Vec<Option<f64>>, Vec<Option<f64>>, Vec<Option<f64>>) {
+fn compute_bollinger(bars: &[DailyBar], period: usize, std_dev: f64) -> (Vec<Option<f64>>, Vec<Option<f64>>, Vec<Option<f64>>) {
     use stock_vision_indicator_core::{BollingerBands, SMA, Indicator};
-    let bb = BollingerBands { period: 20, std_dev: 2.0 };
+    let bb = BollingerBands { period, std_dev };
     let upper_result = bb.calculate(bars);
-    let sma = SMA { period: 20 };
+    let sma = SMA { period };
     let mid_result = sma.calculate(bars);
     
     let upper: Vec<Option<f64>> = upper_result.values.iter().map(|v| {
@@ -102,7 +102,7 @@ fn compute_bollinger(bars: &[DailyBar]) -> (Vec<Option<f64>>, Vec<Option<f64>>, 
 /// Returns (dif, dea, histogram).
 struct MacdLine { dif: Option<f64>, dea: Option<f64>, bar: Option<f64> }
 
-fn compute_macd(bars: &[DailyBar]) -> Vec<MacdLine> {
+fn compute_macd(bars: &[DailyBar], fast: usize, slow: usize, signal: usize) -> Vec<MacdLine> {
     let n = bars.len();
     if n == 0 { return vec![]; }
 
@@ -177,18 +177,18 @@ pub struct CandlestickCanvas {
 }
 
 impl CandlestickCanvas {
-    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>, active_indicators: &[IndicatorType]) -> Self {
+    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>, active_indicators: &[IndicatorType], params: &crate::state::IndicatorParams) -> Self {
         let visible = zoom_level.max(10).min(bars.len().max(10));
-        let ma5 = compute_ma(&bars, 5);
-        let ma10 = compute_ma(&bars, 10);
-        let ma20 = compute_ma(&bars, 20);
-        let ma60 = compute_ma(&bars, 60);
-        let vol_ma5 = compute_volume_ma(&bars, 5);
-        let macd = compute_macd(&bars);
+        let ma5 = compute_ma(&bars, params.ma_periods[0]);
+        let ma10 = compute_ma(&bars, params.ma_periods[1]);
+        let ma20 = compute_ma(&bars, params.ma_periods[2]);
+        let ma60 = compute_ma(&bars, params.ma_periods[3]);
+        let vol_ma5 = compute_volume_ma(&bars, params.vol_ma_period);
+        let macd = compute_macd(&bars, params.macd_fast, params.macd_slow, params.macd_signal);
         
         let has_boll = active_indicators.iter().any(|i| *i == IndicatorType::BollingerBands);
         let (boll_upper, boll_middle, boll_lower) = if has_boll {
-            compute_bollinger(&bars)
+            compute_bollinger(&bars, params.boll_period, params.boll_std)
         } else {
             (vec![], vec![], vec![])
         };
@@ -197,7 +197,7 @@ impl CandlestickCanvas {
             .find(|i| i.is_sub_panel())
             .and_then(|indicator_type| {
                 let indicator_type = *indicator_type;
-                crate::services::indicator_service::compute_indicator(indicator_type, &bars)
+                crate::services::indicator_service::compute_indicator(indicator_type, &bars, params)
                     .map(|data| SubIndicator { data, r#type: indicator_type })
             });
         

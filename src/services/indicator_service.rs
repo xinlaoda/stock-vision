@@ -56,17 +56,17 @@ pub struct ComputedIndicator {
 }
 
 /// Compute indicator data for a set of bars
-pub fn compute_indicator(indicator_type: IndicatorType, bars: &[DailyBar]) -> Option<ComputedIndicator> {
+pub fn compute_indicator(indicator_type: IndicatorType, bars: &[DailyBar], params: &crate::state::IndicatorParams) -> Option<ComputedIndicator> {
     if bars.is_empty() {
         return None;
     }
 
     match indicator_type {
         IndicatorType::BollingerBands => {
-            let bb = BollingerBands { period: 20, std_dev: 2.0 };
+            let bb = BollingerBands { period: params.boll_period, std_dev: params.boll_std };
             let upper = bb.calculate(bars);
             // Compute middle (SMA) and lower band
-            let sma = SMA { period: 20 };
+            let sma = SMA { period: params.boll_period };
             let middle = sma.calculate(bars);
             // Lower = middle - 2*std (since upper = middle + 2*std, we can derive)
             let lower: Vec<Option<f64>> = upper.values.iter().zip(middle.values.iter()).map(|(u, m)| {
@@ -91,7 +91,7 @@ pub fn compute_indicator(indicator_type: IndicatorType, bars: &[DailyBar]) -> Op
             })
         }
         IndicatorType::KDJ => {
-            let kdj = KDJ::default();
+            let kdj = KDJ { n: params.kdj_n, m1: params.kdj_m1, m2: params.kdj_m2 };
             let points = kdj.calculate_full(bars);
             let k: Vec<Option<f64>> = points.iter().map(|p| if p.k.is_nan() { None } else { Some(p.k) }).collect();
             let d: Vec<Option<f64>> = points.iter().map(|p| if p.d.is_nan() { None } else { Some(p.d) }).collect();
@@ -112,7 +112,7 @@ pub fn compute_indicator(indicator_type: IndicatorType, bars: &[DailyBar]) -> Op
             })
         }
         IndicatorType::RSI => {
-            let rsi = RSI { period: 14 };
+            let rsi = RSI { period: params.rsi_period };
             let result = rsi.calculate(bars);
             let vals: Vec<Option<f64>> = result.values.iter().map(|v| if v.value.is_nan() { None } else { Some(v.value) }).collect();
 
@@ -131,18 +131,18 @@ pub fn compute_indicator(indicator_type: IndicatorType, bars: &[DailyBar]) -> Op
             })
         }
         IndicatorType::MACD => {
-            let macd = stock_vision_indicator_core::MACD { fast: 12, slow: 26, signal: 9 };
+            let macd = stock_vision_indicator_core::MACD { fast: params.macd_fast, slow: params.macd_slow, signal: params.macd_signal };
             let result = macd.calculate(bars);
             let vals: Vec<Option<f64>> = result.values.iter().map(|v| if v.value.is_nan() { None } else { Some(v.value) }).collect();
 
             // Recompute DIF and DEA for display
-            let fast_ema = EMA { period: 12 }.calculate(bars);
-            let slow_ema = EMA { period: 26 }.calculate(bars);
+            let fast_ema = EMA { period: params.macd_fast }.calculate(bars);
+            let slow_ema = EMA { period: params.macd_slow }.calculate(bars);
             let dif: Vec<Option<f64>> = fast_ema.values.iter().zip(slow_ema.values.iter()).map(|(f, s)| {
                 if f.value.is_nan() || s.value.is_nan() { None } else { Some(f.value - s.value) }
             }).collect();
 
-            let signal_k = 2.0 / (9.0 + 1.0);
+            let signal_k = 2.0 / (params.macd_signal as f64 + 1.0);
             let mut dea: Vec<Option<f64>> = Vec::new();
             let mut prev_dea = 0.0;
             for (i, d) in dif.iter().enumerate() {

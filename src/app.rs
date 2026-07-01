@@ -12,6 +12,7 @@ use stock_vision_analysis_core::FinancialAnalyzer;
 use crate::services::data_service::DataService;
 use crate::state::{AppState, KlinePeriod, Panel, TimeRange};
 use crate::services::indicator_service::IndicatorType;
+use stock_vision_data_model::Exchange;
 use stock_vision_data_model::{IntradayBar, IntradayPeriod};
 use crate::ui::{panels, style};
 
@@ -41,6 +42,19 @@ pub enum Message {
     MarketIndicesLoaded(Vec<crate::state::MarketIndexData>),
     IntradayBarsLoaded(Vec<IntradayBar>),
     ToggleIndicator(IndicatorType),
+    // Indicator parameter adjustments
+    SetMAPeriod(usize, usize),         // (index 0-3, new period)
+    SetVolMAPeriod(usize),
+    SetMACDFast(usize),
+    SetMACDSlow(usize),
+    SetMACDSignal(usize),
+    SetBOLLPeriod(usize),
+    SetBOLLStd(f64),
+    SetKDJ_N(usize),
+    SetKDJ_M1(usize),
+    SetKDJ_M2(usize),
+    SetRSIPeriod(usize),
+    ReloadIndicators,
 }
 
 pub struct StockVision {
@@ -257,7 +271,72 @@ impl StockVision {
                 Task::none() 
             }
             Message::Error(_) => Task::none(),
+            // Indicator parameter updates - just store and reload
+            Message::SetMAPeriod(idx, period) => {
+                if idx < 4 { self.state.indicator_params.ma_periods[idx] = period.max(2); }
+                self.reload_chart()
+            }
+            Message::SetVolMAPeriod(period) => {
+                self.state.indicator_params.vol_ma_period = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetMACDFast(period) => {
+                self.state.indicator_params.macd_fast = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetMACDSlow(period) => {
+                self.state.indicator_params.macd_slow = period.max(5);
+                self.reload_chart()
+            }
+            Message::SetMACDSignal(period) => {
+                self.state.indicator_params.macd_signal = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetBOLLPeriod(period) => {
+                self.state.indicator_params.boll_period = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetBOLLStd(std) => {
+                self.state.indicator_params.boll_std = std.max(0.5).min(5.0);
+                self.reload_chart()
+            }
+            Message::SetKDJ_N(period) => {
+                self.state.indicator_params.kdj_n = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetKDJ_M1(period) => {
+                self.state.indicator_params.kdj_m1 = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetKDJ_M2(period) => {
+                self.state.indicator_params.kdj_m2 = period.max(2);
+                self.reload_chart()
+            }
+            Message::SetRSIPeriod(period) => {
+                self.state.indicator_params.rsi_period = period.max(2);
+                self.reload_chart()
+            }
+            Message::ReloadIndicators => {
+                self.reload_chart()
+            }
         }
+    }
+
+    /// Reload the daily bars (triggers redraw with new indicator params)
+    fn reload_chart(&mut self) -> Task<Message> {
+        if let Some(ref code) = self.state.selected_stock.clone() {
+            let exchange = self.state.stock_exchange.clone().unwrap_or(Exchange::SZ);
+            let svc = self.data_service.clone();
+            let code = code.clone();
+            return Task::perform(
+                async move { svc.load_daily_bars(&code, exchange).await },
+                |result| match result {
+                    Ok(bars) => Message::DailyBarsLoaded(bars),
+                    Err(e) => Message::Error(e.to_string()),
+                },
+            );
+        }
+        Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
