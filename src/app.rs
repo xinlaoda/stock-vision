@@ -73,8 +73,9 @@ pub struct StockVision {
 
 impl StockVision {
     pub fn new() -> (Self, Task<Message>) {
-        let state = AppState::new();
+        let mut state = AppState::new();
         let ds = Arc::new(DataService::new(state.storage.clone()));
+        state.finnhub_available = ds.is_finnhub_available();
 
         // Start background load of market index data
         let task = {

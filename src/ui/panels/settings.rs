@@ -22,15 +22,35 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             .size(14.0).color(style::colors().text_secondary),
     );
     content = content.push(
-        text("• 日K线: 腾讯财经 (web.ifzq.gtimg.cn)")
+        text("• A股日K线: 腾讯财经 (web.ifzq.gtimg.cn)")
             .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(
-        text("• 搜索/基本面: 东方财富 (eastmoney.com)")
+        text("• A股搜索/基本面: 东方财富 (eastmoney.com)")
             .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(
-        text("• 分时数据: 腾讯 + 东方财富 Fallback")
+        text("• A股分时数据: 腾讯 + 东方财富 Fallback")
+            .size(13.0).color(style::colors().text_secondary),
+    );
+    content = content.push(text("").size(4.0));
+
+    // ── 美股数据源 ──
+    content = content.push(
+        text("美股数据源").size(18.0).color(style::colors().text_primary),
+    );
+    content = content.push(
+        text("• 美股K线/搜索: Yahoo Finance (免费/无需注册)")
+            .size(13.0).color(style::colors().text_secondary),
+    );
+
+    let finnhub_status = if state.finnhub_available {
+        "✅ Finnhub 已启用（提供美股K线/基本面/实时报价，数据更全面）"
+    } else {
+        "❌ Finnhub 未配置 - 设置 FINNHUB_API_KEY 环境变量后可启用更完整的美股数据"
+    };
+    content = content.push(
+        text(finnhub_status)
             .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(text("").size(8.0));

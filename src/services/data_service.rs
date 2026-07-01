@@ -1,5 +1,5 @@
 use stock_vision_data_model::*;
-use stock_vision_data_source::{AdjustType, DataSource, FallbackSource, TencentSource, EastMoneySource, YahooSource};
+use stock_vision_data_source::{AdjustType, DataSource, FallbackSource, TencentSource, EastMoneySource, YahooSource, FinnhubSource};
 use stock_vision_storage::Storage;
 use std::sync::Arc;
 use tracing::info;
@@ -7,8 +7,10 @@ use tracing::info;
 pub struct DataService {
     /// Primary data source for A-share (with fallback chain)
     source: FallbackSource,
-    /// Data source for US stocks (Yahoo Finance)
+    /// Data source for US stocks (Yahoo Finance - free, no key needed)
     us_source: YahooSource,
+    /// Data source for US stocks (Finnhub - richer, needs API key)
+    finnhub_source: FinnhubSource,
     search_source: EastMoneySource,
     fin_source: EastMoneySource,
     storage: Arc<Storage>,
@@ -24,28 +26,45 @@ impl DataService {
         Self {
             source,
             us_source: YahooSource::new(),
+            finnhub_source: FinnhubSource::new(),
             search_source: EastMoneySource::new(),
             fin_source: EastMoneySource::new(),
             storage,
         }
     }
 
+    /// Whether Finnhub is configured and available
+    pub fn is_finnhub_available(&self) -> bool {
+        self.finnhub_source.is_available()
+    }
+
     /// Select data source based on exchange
+    /// For US stocks: prefers Finnhub (richer data) if available, falls back to Yahoo
     fn source_for_exchange(&self, exchange: &Exchange) -> &dyn DataSource {
         if exchange.is_us() {
-            &self.us_source as &dyn DataSource
+            if self.finnhub_source.is_available() {
+                &self.finnhub_source as &dyn DataSource
+            } else {
+                &self.us_source as &dyn DataSource
+            }
         } else {
             &self.source as &dyn DataSource
         }
     }
 
     pub async fn search_stocks(&self, keyword: &str) -> anyhow::Result<Vec<Stock>> {
-        // Try EastMoney first (A-share), then Yahoo (US stocks)
+        // Try EastMoney first (A-share), then Finnhub (if available), then Yahoo (US stocks)
         match self.search_source.search_stocks(keyword).await {
             Ok(stocks) if !stocks.is_empty() => Ok(stocks),
             _ => {
-                // Fallback to Yahoo for US stocks
-                self.us_source.search_stocks(keyword).await
+                if self.finnhub_source.is_available() {
+                    match self.finnhub_source.search_stocks(keyword).await {
+                        Ok(stocks) if !stocks.is_empty() => Ok(stocks),
+                        _ => self.us_source.search_stocks(keyword).await
+                    }
+                } else {
+                    self.us_source.search_stocks(keyword).await
+                }
             }
         }
     }
@@ -90,23 +109,37 @@ impl DataService {
     }
 
     /// Load financial reports with SQLite cache.
-    /// Returns cached data if available, otherwise fetches from EastMoney API.
+    /// Returns cached data if available, otherwise fetches from API.
+    /// Uses Finnhub for US stocks (if available), EastMoney for A-share.
     pub async fn load_financial_data(
         &self,
         code: &str,
         exchange: Exchange,
     ) -> anyhow::Result<(Vec<FinancialReport>, ValuationRatios)> {
+        let is_us = exchange.is_us();
+
         // Check local cache first
         let cached = self.storage.get_financial_reports(code).unwrap_or_default();
         if cached.len() >= 4 {
             info!("Using cached financial reports for {} ({} reports)", code, cached.len());
-            let valuation = self.fin_source.get_valuation_ratios(code, exchange.clone()).await?;
+            let valuation = if is_us && self.finnhub_source.is_available() {
+                self.finnhub_source.get_valuation_ratios(code, exchange.clone()).await?
+            } else {
+                self.fin_source.get_valuation_ratios(code, exchange.clone()).await?
+            };
             return Ok((cached, valuation));
         }
 
         // Fetch from API
-        info!("Cache miss for {} financial reports, fetching from EastMoney", code);
-        let reports = self.fin_source.get_financial_reports(code, exchange.clone(), None).await?;
+        let fin_source: &dyn DataSource = if is_us && self.finnhub_source.is_available() {
+            info!("Cache miss for {} financial reports, fetching from Finnhub", code);
+            &self.finnhub_source as &dyn DataSource
+        } else {
+            info!("Cache miss for {} financial reports, fetching from EastMoney", code);
+            &self.fin_source as &dyn DataSource
+        };
+
+        let reports = fin_source.get_financial_reports(code, exchange.clone(), None).await?;
 
         if !reports.is_empty() {
             if let Err(e) = self.storage.save_financial_reports(&reports) {
@@ -116,7 +149,7 @@ impl DataService {
             }
         }
 
-        let valuation = self.fin_source.get_valuation_ratios(code, exchange.clone()).await?;
+        let valuation = fin_source.get_valuation_ratios(code, exchange.clone()).await?;
         Ok((reports, valuation))
     }
 
