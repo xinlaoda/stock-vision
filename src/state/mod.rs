@@ -1,8 +1,7 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use stock_vision_data_model::*;
 use stock_vision_storage::Storage;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Panel {
@@ -60,6 +59,7 @@ impl KlinePeriod {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimeRange {
     OneMonth,
+    YearToDate,
     ThreeMonths,
     SixMonths,
     OneYear,
@@ -71,6 +71,7 @@ pub enum TimeRange {
 impl TimeRange {
     pub fn label(&self) -> &str {
         match self {
+            TimeRange::YearToDate => "年初",
             TimeRange::OneMonth => "1月",
             TimeRange::ThreeMonths => "3月",
             TimeRange::SixMonths => "6月",
@@ -83,6 +84,11 @@ impl TimeRange {
 
     pub fn days(&self) -> i64 {
         match self {
+            TimeRange::YearToDate => {
+                let now = chrono::Utc::now().date_naive();
+                let jan1 = chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1).unwrap_or(now);
+                (now - jan1).num_days()
+            },
             TimeRange::OneMonth => 30,
             TimeRange::ThreeMonths => 90,
             TimeRange::SixMonths => 180,
@@ -124,7 +130,7 @@ pub struct AppState {
     pub hovered_bar_index: Option<usize>,
 
     // Storage
-    pub storage: Arc<RwLock<Storage>>,
+    pub storage: Arc<Storage>,
 }
 
 impl AppState {
@@ -158,7 +164,7 @@ impl AppState {
             watchlist: Vec::new(),
             active_panel: Panel::default(),
             current_time: Utc::now(),
-            storage: Arc::new(RwLock::new(storage)),
+            storage: Arc::new(storage),
             hovered_bar_index: None,
         }
     }

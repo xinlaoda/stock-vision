@@ -4,28 +4,31 @@ use anyhow::Result;
 use chrono::NaiveDate;
 use rusqlite::Connection;
 use stock_vision_data_model::*;
+use std::sync::Mutex;
 
 pub struct Storage {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
 
 impl Storage {
     pub fn new(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
-        let storage = Self { conn };
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        let storage = Self { conn: Mutex::new(conn) };
         storage.initialize_tables()?;
         Ok(storage)
     }
 
     pub fn in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let storage = Self { conn };
+        let storage = Self { conn: Mutex::new(conn) };
         storage.initialize_tables()?;
         Ok(storage)
     }
 
     fn initialize_tables(&self) -> Result<()> {
-        self.conn.execute_batch(
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS daily_bars (
                 code TEXT NOT NULL,
@@ -60,7 +63,8 @@ impl Storage {
     }
 
     pub fn save_daily_bars(&self, bars: &[DailyBar]) -> Result<()> {
-        let mut stmt = self.conn.prepare_cached(
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
             "INSERT OR REPLACE INTO daily_bars (code, date, open, high, low, close, volume, amount)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )?;
@@ -80,7 +84,8 @@ impl Storage {
     }
 
     pub fn get_daily_bars(&self, code: &str, limit: usize) -> Result<Vec<DailyBar>> {
-        let mut stmt = self.conn.prepare_cached(
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
             "SELECT code, date, open, high, low, close, volume, amount
              FROM daily_bars
              WHERE code = ?1
@@ -107,7 +112,8 @@ impl Storage {
 
     pub fn save_watchlist(&self, watchlist: &Watchlist) -> Result<()> {
         let stocks_json = serde_json::to_string(&watchlist.stocks)?;
-        self.conn.execute(
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
             "INSERT OR REPLACE INTO watchlists (id, name, stocks) VALUES (?1, ?2, ?3)",
             rusqlite::params![watchlist.id, watchlist.name, stocks_json],
         )?;
@@ -115,7 +121,8 @@ impl Storage {
     }
 
     pub fn get_watchlists(&self) -> Result<Vec<Watchlist>> {
-        let mut stmt = self.conn.prepare("SELECT id, name, stocks FROM watchlists")?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, stocks FROM watchlists")?;
         let rows = stmt.query_map([], |row| {
             Ok(Watchlist {
                 id: row.get(0)?,
@@ -126,3 +133,5 @@ impl Storage {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 }
+
+unsafe impl Sync for Storage {}

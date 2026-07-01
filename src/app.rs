@@ -7,9 +7,9 @@ use chrono::{DateTime, Utc};
 pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji");
 
 use stock_vision_data_model::*;
-use stock_vision_data_source::{DataSource, EastMoneySource, TencentSource};
 use stock_vision_analysis_core::FinancialAnalyzer;
 
+use crate::services::data_service::DataService;
 use crate::state::{AppState, KlinePeriod, Panel, TimeRange};
 use crate::ui::{panels, style};
 
@@ -36,20 +36,18 @@ pub enum Message {
 
 pub struct StockVision {
     state: AppState,
-    search_source: Arc<EastMoneySource>,
-    kline_source: Arc<TencentSource>,
-    fin_source: Arc<EastMoneySource>,
+    data_service: Arc<DataService>,
     analyzer: FinancialAnalyzer,
 }
 
 impl StockVision {
     pub fn new() -> (Self, Task<Message>) {
+        let state = AppState::new();
+        let ds = Arc::new(DataService::new(state.storage.clone()));
         (
             Self {
-                state: AppState::new(),
-                search_source: Arc::new(EastMoneySource::new()),
-                kline_source: Arc::new(TencentSource::new()),
-                fin_source: Arc::new(EastMoneySource::new()),
+                state,
+                data_service: ds,
                 analyzer: FinancialAnalyzer,
             },
             Task::none(),
@@ -78,10 +76,10 @@ impl StockVision {
                 if kw.is_empty() { return Task::none(); }
                 let clean = kw.trim_start_matches(|c: char| c.is_alphabetic()).to_string();
                 let term = if clean.is_empty() { kw } else { clean };
-                let s = self.search_source.clone();
+                let ds = self.data_service.clone();
                 self.state.search_results.clear();
                 Task::perform(
-                    async move { s.search_stocks(&term).await.unwrap_or_default() },
+                    async move { ds.search_stocks(&term).await.unwrap_or_default() },
                     Message::SearchResultsLoaded,
                 )
             }
@@ -101,9 +99,9 @@ impl StockVision {
                 self.state.daily_bars.clear();
                 let code = stock.code.clone();
                 let exchange = stock.exchange.clone();
-                let s = self.kline_source.clone();
+                let ds = self.data_service.clone();
                 Task::perform(
-                    async move { s.get_daily_bars(&code, exchange, None, None, None).await.unwrap_or_default() },
+                    async move { ds.load_daily_bars(&code, exchange).await.unwrap_or_default() },
                     Message::DailyBarsLoaded,
                 )
             }
@@ -115,9 +113,9 @@ impl StockVision {
                     self.state.daily_bars.clear();
                     let code = code.clone();
                     let exchange = ex.clone();
-                    let s = self.kline_source.clone();
+                    let ds = self.data_service.clone();
                     return Task::perform(
-                        async move { s.get_daily_bars(&code, exchange, None, None, None).await.unwrap_or_default() },
+                        async move { ds.load_daily_bars(&code, exchange).await.unwrap_or_default() },
                         Message::DailyBarsLoaded,
                     );
                 }
@@ -125,28 +123,16 @@ impl StockVision {
             }
             Message::SetTimeRange(range) => {
                 self.state.time_range = range;
-                if let (Some(code), Some(ex)) = (&self.state.selected_stock, &self.state.stock_exchange) {
-                    self.state.daily_bars.clear();
-                    let code = code.clone();
-                    let exchange = ex.clone();
-                    let s = self.kline_source.clone();
-                    return Task::perform(
-                        async move { s.get_daily_bars(&code, exchange, None, None, None).await.unwrap_or_default() },
-                        Message::DailyBarsLoaded,
-                    );
-                }
+                // Don't re-fetch data — time range is a client-side filter
                 Task::none()
             }
             Message::ZoomIn => {
-                // Zoom in: show fewer bars
                 let max_visible = self.state.daily_bars.len().min(120);
                 let new_count = (self.state.zoom_level as f32 * 1.3) as usize;
                 self.state.zoom_level = new_count.max(10).min(max_visible);
                 Task::none()
             }
-            Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
             Message::ZoomOut => {
-                // Zoom out: show more bars
                 let max_visible = self.state.daily_bars.len().min(2000);
                 let new_count = (self.state.zoom_level as f32 / 1.3) as usize;
                 self.state.zoom_level = new_count.max(10).min(max_visible);
@@ -172,6 +158,7 @@ impl StockVision {
             Message::AddToWatchlist => { self.state.add_to_watchlist(); Task::none() }
             Message::RemoveFromWatchlist(c) => { self.state.remove_from_watchlist(&c); Task::none() }
             Message::PanelChanged(p) => { self.state.active_panel = p; Task::none() }
+            Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
             Message::Error(_) => Task::none(),
         }
     }

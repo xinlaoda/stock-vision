@@ -105,6 +105,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 make_range_btn("1年", TimeRange::OneYear, state.time_range == TimeRange::OneYear).into(),
                 make_range_btn("2年", TimeRange::TwoYears, state.time_range == TimeRange::TwoYears).into(),
                 make_range_btn("5年", TimeRange::FiveYears, state.time_range == TimeRange::FiveYears).into(),
+                make_range_btn("年初", TimeRange::YearToDate, state.time_range == TimeRange::YearToDate).into(),
                 make_range_btn("全部", TimeRange::Max, state.time_range == TimeRange::Max).into(),
             ]).spacing(4).into();
 

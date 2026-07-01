@@ -30,6 +30,14 @@ impl TencentSource {
             code
         )
     }
+
+    fn kline_url(code: &str, exchange: &Exchange, ktype: &str, start: &str, count: u32, adjust: &str) -> String {
+        let tcode = Self::tencent_code(code, exchange);
+        format!(
+            "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={},{},{},,{},{}",
+            tcode, ktype, start, count, adjust
+        )
+    }
 }
 
 #[async_trait]
@@ -42,22 +50,24 @@ impl DataSource for TencentSource {
         &self,
         code: &str,
         exchange: Exchange,
-        _start_date: Option<NaiveDate>,
+        start_date: Option<NaiveDate>,
         _end_date: Option<NaiveDate>,
         adjust: Option<AdjustType>,
     ) -> anyhow::Result<Vec<DailyBar>> {
-        let tcode = Self::tencent_code(code, &exchange);
-        info!("Fetching Tencent K-line: {} (adj={:?})", tcode, adjust);
+        let start = start_date
+            .unwrap_or(NaiveDate::from_ymd_opt(2005, 1, 1).unwrap())
+            .format("%Y-%m-%d")
+            .to_string();
 
         let adj_param = match adjust.unwrap_or(AdjustType::Forward) {
             AdjustType::Forward => "qfq",
             _ => "",
         };
 
-        let url = format!(
-            "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={},{},2015-01-01,,2000,{}",
-            tcode, "day", adj_param
-        );
+        let url = Self::kline_url(code, &exchange, "day", &start, 2000, adj_param);
+        let tcode = Self::tencent_code(code, &exchange);
+
+        info!("Fetching Tencent K-line: {} (from {})", tcode, start);
 
         let resp = self.client.get(&url).send().await?;
         let text = resp.text().await?;
