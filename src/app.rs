@@ -63,6 +63,8 @@ pub enum Message {
     ToggleTheme,
     ExportCSV,
     RealtimeQuote(Vec<DailyBar>),
+    FinnhubKeyChanged(String),
+    FinnhubKeySubmitted,
 }
 
 pub struct StockVision {
@@ -76,6 +78,7 @@ impl StockVision {
         let mut state = AppState::new();
         let ds = Arc::new(DataService::new(state.storage.clone()));
         state.finnhub_available = ds.is_finnhub_available();
+        state.finnhub_api_key = ds.get_finnhub_api_key();
 
         // Start background load of market index data
         let task = {
@@ -375,6 +378,17 @@ impl StockVision {
             }
             Message::CancelDrawing => {
                 self.state.pending_drawing = None;
+                Task::none()
+            }
+            Message::FinnhubKeyChanged(k) => { self.state.finnhub_api_key = k; Task::none() }
+            Message::FinnhubKeySubmitted => {
+                let key = self.state.finnhub_api_key.clone();
+                // Store in SQLite (will be picked up on next restart)
+                self.state.storage.set_config("finnhub_api_key", &key);
+                // Update finnhub_available status (check env var + stored key)
+                let env_has_key = std::env::var("FINNHUB_API_KEY").ok()
+                    .filter(|k| !k.is_empty() && k != "your_key_here").is_some();
+                self.state.finnhub_available = env_has_key || (!key.is_empty() && key != "your_key_here");
                 Task::none()
             }
             Message::ToggleTheme => {

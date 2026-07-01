@@ -195,7 +195,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 let filtered = filter_bars(&state.daily_bars, state.time_range);
                 let period = state.kline_period;
                 let aggregated = aggregate_bars(&filtered, period);
-                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset, state.drawing_lines.clone(), &state.active_indicators, &state.indicator_params).into_element()
+                CandlestickCanvas::new(aggregated, state.time_range, state.zoom_level, state.hovered_bar_index, state.pan_offset, state.drawing_lines.clone(), &state.active_indicators, &state.indicator_params, state.drawing_tool_mode).into_element()
             } else {
                 text("").into()
             };

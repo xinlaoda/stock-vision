@@ -1,7 +1,7 @@
 use crate::state::AppState;
 use crate::app::Message;
 use crate::ui::style;
-use iced::widget::{button, column, container, row, scrollable, text, Column};
+use iced::widget::{button, column, container, row, scrollable, text, text_input, Column};
 use iced::{Color, Element, Fill};
 
 pub fn view(state: &AppState) -> Element<'_, Message> {
@@ -18,7 +18,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
         text("数据源配置").size(18.0).color(style::colors().text_primary),
     );
     content = content.push(
-        text("当前数据源为 Tencent + EastMoney 双源 Fallback 模式")
+        text("当前支持 A股 + 美股，多数据源自动 Fallback")
             .size(14.0).color(style::colors().text_secondary),
     );
     content = content.push(
@@ -44,14 +44,44 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             .size(13.0).color(style::colors().text_secondary),
     );
 
-    let finnhub_status = if state.finnhub_available {
-        "✅ Finnhub 已启用（提供美股K线/基本面/实时报价，数据更全面）"
+    // Finnhub API Key - editable input
+    content = content.push(text("").size(2.0));
+    content = content.push(
+        text("Finnhub API Key（提供美股基本面/估值数据）").size(14.0).color(style::colors().text_primary),
+    );
+    
+    let finnhub_key = state.finnhub_api_key.clone();
+    let key_display = if finnhub_key.is_empty() { 
+        String::from("输入 Finnhub API Key...") 
     } else {
-        "❌ Finnhub 未配置 - 设置 FINNHUB_API_KEY 环境变量后可启用更完整的美股数据"
+        // Show masked key
+        let visible = if finnhub_key.len() > 8 { &finnhub_key[..4] } else { &finnhub_key[..finnhub_key.len().min(4)] };
+        format!("{}****", visible)
+    };
+    
+    content = content.push(
+        row![
+            iced::widget::text_input(
+                "输入 Finnhub API Key（留空禁用）", 
+                &key_display
+            )
+                .on_input(Message::FinnhubKeyChanged)
+                .on_submit(Message::FinnhubKeySubmitted)
+                .padding(6).size(13.0)
+                .width(350.0),
+        ].spacing(4)
+    );
+    
+    let finnhub_status = if state.finnhub_available {
+        "✅ Finnhub 已启用"
+    } else if !state.finnhub_api_key.is_empty() {
+        "⏳ Finnhub 已配置，重启后生效"
+    } else {
+        "❌ Finnhub 未配置（使用 Yahoo Finance 作为美股数据源）"
     };
     content = content.push(
         text(finnhub_status)
-            .size(13.0).color(style::colors().text_secondary),
+            .size(12.0).color(style::colors().text_secondary),
     );
     content = content.push(text("").size(8.0));
 
@@ -92,7 +122,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
         text("关于").size(18.0).color(style::colors().text_primary),
     );
     content = content.push(
-        text("Stock Vision v0.1.0 — A股行情分析与投资工具")
+        text("Stock Vision v0.1.0 — A股+美股行情分析与投资工具")
             .size(13.0).color(style::colors().text_secondary),
     );
     content = content.push(

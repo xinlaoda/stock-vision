@@ -23,10 +23,14 @@ impl DataService {
             Box::new(TencentSource::new()),
             Box::new(EastMoneySource::new()),
         ]);
+
+        // Try loading Finnhub API key from storage (env var takes priority)
+        let stored_key = storage.get_config("finnhub_api_key");
+
         Self {
             source,
             us_source: YahooSource::new(),
-            finnhub_source: FinnhubSource::new(),
+            finnhub_source: FinnhubSource::with_optional_key(stored_key.as_deref()),
             search_source: EastMoneySource::new(),
             fin_source: EastMoneySource::new(),
             storage,
@@ -36,6 +40,29 @@ impl DataService {
     /// Whether Finnhub is configured and available
     pub fn is_finnhub_available(&self) -> bool {
         self.finnhub_source.is_available()
+    }
+
+    /// Set Finnhub API key dynamically (from settings UI).
+    /// Stores in SQLite and re-initializes the Finnhub client.
+    /// Environment variable FINNHUB_API_KEY takes priority.
+    pub fn set_finnhub_api_key(&mut self, key: &str) {
+        // Store in SQLite
+        let _ = self.storage.set_config("finnhub_api_key", key);
+        // Re-initialize Finnhub source with the stored key
+        // with_optional_key handles priority: explicit key > env var > disabled
+        self.finnhub_source = FinnhubSource::with_optional_key(Some(key));
+    }
+
+    /// Get the current Finnhub API key (from env var or SQLite)
+    pub fn get_finnhub_api_key(&self) -> String {
+        // Env var takes priority
+        if let Ok(key) = std::env::var("FINNHUB_API_KEY") {
+            if !key.is_empty() {
+                return key;
+            }
+        }
+        // Fall back to SQLite config
+        self.storage.get_config("finnhub_api_key").unwrap_or_default()
     }
 
     /// Select data source based on exchange

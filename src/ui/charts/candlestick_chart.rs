@@ -174,10 +174,11 @@ pub struct CandlestickCanvas {
     /// Active sub-panel indicator (KDJ, RSI) replacing MACD when set
     sub_indicator: Option<SubIndicator>,
     drawing_lines: Vec<crate::state::DrawingLine>,
+    drawing_tool_mode: crate::state::DrawingToolMode,
 }
 
 impl CandlestickCanvas {
-    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>, active_indicators: &[IndicatorType], params: &crate::state::IndicatorParams) -> Self {
+    pub fn new(bars: Vec<DailyBar>, time_range: TimeRange, zoom_level: usize, hovered: Option<usize>, pan_offset: usize, drawing_lines: Vec<crate::state::DrawingLine>, active_indicators: &[IndicatorType], params: &crate::state::IndicatorParams, drawing_tool_mode: crate::state::DrawingToolMode) -> Self {
         let visible = zoom_level.max(10).min(bars.len().max(10));
         let ma5 = compute_ma(&bars, params.ma_periods[0]);
         let ma10 = compute_ma(&bars, params.ma_periods[1]);
@@ -207,6 +208,7 @@ impl CandlestickCanvas {
             ma5, ma10, ma20, ma60, vol_ma5, macd,
             boll_upper, boll_middle, boll_lower, sub_indicator,
             drawing_lines,
+            drawing_tool_mode,
         }
     }
 
@@ -735,18 +737,17 @@ impl Program<crate::app::Message> for CandlestickCanvas {
                     return None;
                 }
                 
-                // Check if any drawing tool is active
-                // We handle drawing at the app level via HoverBar messages
-                // For simplicity, let's handle it via the hovered_index
-                if let Some(hover_idx) = self.hovered_index {
-                    let sg = self.get_visible_start();
-                    let bars = self.get_visible_bars();
-                    if hover_idx >= sg && hover_idx < sg + bars.len() {
-                        let li = hover_idx - sg;
-                        if li < bars.len() {
-                            let bar = &bars[li];
-                            // Return a click event - we'll process it in the drawing tool mode
-                            return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close, hover_idx)));
+                // Only handle drawing when a drawing tool is active
+                if self.drawing_tool_mode != crate::state::DrawingToolMode::None {
+                    if let Some(hover_idx) = self.hovered_index {
+                        let sg = self.get_visible_start();
+                        let bars = self.get_visible_bars();
+                        if hover_idx >= sg && hover_idx < sg + bars.len() {
+                            let li = hover_idx - sg;
+                            if li < bars.len() {
+                                let bar = &bars[li];
+                                return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close, hover_idx)));
+                            }
                         }
                     }
                 }

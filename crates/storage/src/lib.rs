@@ -86,6 +86,11 @@ impl Storage {
 
             CREATE INDEX IF NOT EXISTS idx_daily_bars_code_date 
             ON daily_bars(code, date);
+
+            CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )?;
         Ok(())
@@ -296,6 +301,31 @@ impl Storage {
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+    // ── Key-Value config store ──
+
+    pub fn set_config(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_config(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT value FROM config WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get(0),
+        ).ok()
+    }
+
+    pub fn delete_config(&self, key: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM config WHERE key = ?1", rusqlite::params![key])?;
+        Ok(())
     }
 }
 

@@ -18,14 +18,27 @@ pub struct FinnhubSource {
 
 impl FinnhubSource {
     pub fn new() -> Self {
-        let client = match std::env::var("FINNHUB_API_KEY") {
-            Ok(key) if !key.is_empty() && key != "your_key_here" => {
+        Self::with_optional_key(None)
+    }
+
+    /// Create FinnhubSource with an optional key.
+    /// Priority: parameter > env var FINNHUB_API_KEY > disabled
+    pub fn with_optional_key(key: Option<&str>) -> Self {
+        // Priority: explicit key > env var > disabled
+        let env_key = std::env::var("FINNHUB_API_KEY").ok()
+            .filter(|k| !k.is_empty() && k != "your_key_here");
+        let final_key = key
+            .filter(|k| !k.is_empty() && *k != "your_key_here")
+            .or(env_key.as_deref());
+
+        let client = match final_key {
+            Some(k) => {
                 info!("FinnhubSource: API key found, enabling Finnhub");
                 let mut config = finnhub::ClientConfig::default();
                 config.rate_limit_strategy = finnhub::RateLimitStrategy::FifteenSecondWindow;
-                Some(finnhub::FinnhubClient::with_config(key, config))
+                Some(finnhub::FinnhubClient::with_config(k, config))
             }
-            _ => {
+            None => {
                 info!("FinnhubSource: no FINNHUB_API_KEY set, disabled");
                 None
             }

@@ -243,6 +243,7 @@ pub struct AppState {
     pub current_time: DateTime<Utc>,
     pub hovered_bar_index: Option<usize>,
     pub finnhub_available: bool,
+    pub finnhub_api_key: String,
 
     // Storage
     pub storage: Arc<Storage>,
@@ -296,6 +297,7 @@ impl AppState {
             storage: Arc::new(storage),
             hovered_bar_index: None,
             finnhub_available: false,
+            finnhub_api_key: String::new(),
         };
         // Load persisted browse history
         let _ = state.load_browse_history_from_db();
