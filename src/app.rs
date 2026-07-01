@@ -96,6 +96,7 @@ impl StockVision {
                 self.state.selected_stock = Some(stock.code.clone());
                 self.state.stock_name = Some(stock.name.clone());
                 self.state.stock_exchange = Some(stock.exchange.clone());
+                self.state.push_browse_history(stock.clone());
                 self.state.active_panel = Panel::Chart;
                 self.state.kline_period = KlinePeriod::Daily;
                 self.state.time_range = TimeRange::OneYear;
@@ -160,7 +161,31 @@ impl StockVision {
             }
             Message::AddToWatchlist => { self.state.add_to_watchlist(); Task::none() }
             Message::RemoveFromWatchlist(c) => { self.state.remove_from_watchlist(&c); Task::none() }
-            Message::PanelChanged(p) => { self.state.active_panel = p; Task::none() }
+            Message::PanelChanged(p) => {
+                let needs_financial = p == Panel::Fundamental;
+                self.state.active_panel = p;
+                // Load financial data automatically when switching to Fundamental panel
+                if needs_financial {
+                    if let (Some(code), Some(ex)) = (&self.state.selected_stock, &self.state.stock_exchange) {
+                        let code = code.clone();
+                        let exchange = ex.clone();
+                        let ds = self.data_service.clone();
+                        return Task::perform(
+                            async move {
+                                ds.load_financial_data(&code, exchange).await
+                                    .unwrap_or((Vec::new(), stock_vision_data_model::ValuationRatios {
+                                        code: String::new(),
+                                        date: chrono::Utc::now().date_naive(),
+                                        pe: None, pb: None, ps: None,
+                                        pcf: None, market_cap: None, dividend_yield: None,
+                                    })).0
+                            },
+                            Message::FinancialDataLoaded,
+                        );
+                    }
+                }
+                Task::none()
+            }
             Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
             Message::AddDrawingLine(price) => { self.state.drawing_lines.push(crate::state::DrawingLine { price, color: (0.8, 0.8, 0.3) }); Task::none() }
             Message::ClearDrawingLines => { self.state.drawing_lines.clear(); Task::none() }
@@ -218,6 +243,7 @@ impl StockVision {
         };
 
         let nav = Column::new()
+            .push(nav_btn("🏠", "首页", Panel::Home))
             .push(nav_btn("📊", "自选股", Panel::Watchlist))
             .push(nav_btn("📈", "行情走势", Panel::Chart))
             .push(nav_btn("📋", "基本面分析", Panel::Fundamental))
@@ -225,18 +251,43 @@ impl StockVision {
             .push(nav_btn("⚙", "设置", Panel::Settings))
             .spacing(4);
 
+        // Browse history
+        let history: Element<Message> = if !self.state.browse_history.is_empty() {
+            let mut col = Column::new().spacing(2);
+            col = col.push(text("浏览记录").size(12.0).color(style::palette::TEXT_SECONDARY));
+            let items: Vec<Element<Message>> = self.state.browse_history.iter().take(10).map(|stock| {
+                let lbl = format!("{}.{}", stock.exchange.prefix(), stock.code);
+                let display = format!("{} ({})", stock.name, lbl);
+                button(text(display).size(11.0))
+                    .on_press(Message::SearchResultSelected(stock.clone()))
+                    .width(iced::Fill).padding(4)
+                    .style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style {
+                        background: Some(style::palette::BG_MID.into()),
+                        text_color: style::palette::TEXT_PRIMARY,
+                        ..Default::default()
+                    })
+                    .into()
+            }).collect();
+            for item in items {
+                col = col.push(item);
+            }
+            col.into()
+        } else { text("").into() };
+
         container(
             Column::new()
                 .push(text("Stock Vision").size(20.0))
                 .push(text("").size(4.0))
                 .push(sr).push(search_res).push(indicator).push(add_btn)
                 .push(text("").size(8.0)).push(nav)
+                .push(text("").size(8.0)).push(history)
                 .spacing(6).padding(16),
         ).width(220).height(Fill).style(style::sidebar()).into()
     }
 
     fn view_main_content(&self) -> Element<'_, Message> {
         let content = match self.state.active_panel {
+            Panel::Home => panels::home::view(&self.state),
             Panel::Watchlist => panels::watchlist::view(&self.state),
             Panel::Chart => panels::chart::view(&self.state),
             Panel::Fundamental => panels::fundamental::view(&self.state),

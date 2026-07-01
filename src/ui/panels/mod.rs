@@ -1,3 +1,4 @@
+pub mod home;
 pub mod watchlist;
 pub mod chart;
 pub mod fundamental;

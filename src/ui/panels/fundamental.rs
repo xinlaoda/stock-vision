@@ -22,7 +22,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
             if state.financial_reports.is_empty() {
                 content = content.push(
-                    text("点击右侧菜单「基本面分析」加载财务数据")
+                    text("正在加载财务数据...")
                         .size(14.0).color(style::palette::TEXT_SECONDARY),
                 );
             } else {

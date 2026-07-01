@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Panel {
+    Home,
     Watchlist,
     Chart,
     Fundamental,
@@ -14,7 +15,7 @@ pub enum Panel {
 
 impl Default for Panel {
     fn default() -> Self {
-        Panel::Watchlist
+        Panel::Home
     }
 }
 
@@ -132,6 +133,9 @@ pub struct AppState {
     // Drawing tools
     pub drawing_lines: Vec<DrawingLine>,
 
+    // Browse history
+    pub browse_history: Vec<Stock>,
+
     // Watchlist
     pub watchlist: Vec<Stock>,
 
@@ -174,6 +178,7 @@ impl AppState {
             zoom_level: 60,
             pan_offset: 0,
             drawing_lines: Vec::new(),
+            browse_history: Vec::new(),
             watchlist: Vec::new(),
             active_panel: Panel::default(),
             current_time: Utc::now(),
@@ -198,6 +203,15 @@ impl AppState {
                 });
             }
         }
+    }
+
+    pub fn push_browse_history(&mut self, stock: Stock) {
+        // Remove duplicate if exists
+        self.browse_history.retain(|s| s.code != stock.code);
+        // Add to front
+        self.browse_history.insert(0, stock);
+        // Keep max 20
+        self.browse_history.truncate(20);
     }
 
     pub fn remove_from_watchlist(&mut self, code: &str) {
