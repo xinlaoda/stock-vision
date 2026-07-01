@@ -1,181 +1,192 @@
 use crate::app::Message;
+use crate::state::MarketIndexData;
 use crate::ui::style;
 use iced::widget::canvas::{self, Frame, Geometry, Program};
 use iced::widget::{column, container, row, text};
 use iced::{Color, Element, Fill, Point, Rectangle, Size, Theme};
 
-/// Generate simulated index sparkline data (price points)
-fn mock_sparkline(seed: f64, count: usize) -> Vec<f64> {
-    let mut pts = Vec::with_capacity(count);
-    let mut val = 3000.0 + seed * 2000.0; // base around 3000-5000
-    for i in 0..count {
-        // Simulate some noise
-        let noise = ((i as f64 * 1.7).sin() * 30.0
-            + (i as f64 * 0.3).cos() * 50.0
-            + (i as f64 * 5.0).sin() * 10.0);
-        val += noise * 0.5;
-        pts.push(val);
-    }
-    pts
-}
+// ── 迷你走势图 Canvas ──
 
-/// Generate mock index price info for display
-fn mock_index_info(name: &str, seed: f64) -> (Vec<f64>, f64, f64, f64) {
-    let data = mock_sparkline(seed, 60);
-    let latest = *data.last().unwrap_or(&3000.0);
-    let first = data.first().copied().unwrap_or(3000.0);
-    let change = latest - first;
-    let change_pct = change / first * 100.0;
-    (data, latest, change, change_pct)
-}
-
-// ── Sparkline Canvas ──
-
-struct Sparkline {
-    points: Vec<f64>,
+struct IndexChart {
+    bars: Vec<stock_vision_data_model::DailyBar>,
     color: Color,
 }
 
-impl Program<Message> for Sparkline {
+impl Program<Message> for IndexChart {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: iced::mouse::Cursor) -> Vec<Geometry> {
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let w = bounds.width;
         let h = bounds.height;
-        if self.points.len() < 2 || w <= 0.0 || h <= 0.0 {
+
+        if self.bars.is_empty() || w <= 0.0 || h <= 0.0 {
+            frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(w, h), Color::from_rgb(0.07, 0.07, 0.11));
             return vec![frame.into_geometry()];
         }
 
-        let min = self.points.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max = self.points.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(w, h), Color::from_rgb(0.07, 0.07, 0.11));
+
+        let lm = 55.0;
+        let rm = 5.0;
+        let tm = 5.0;
+        let bm = 18.0;
+        let dw = w - lm - rm;
+        let dh = h - tm - bm;
+
+        let prices: Vec<f64> = self.bars.iter().map(|b| b.close).collect();
+        let min = prices.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = prices.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let range = (max - min).max(1.0);
+        let n = prices.len();
+        let step_x = if n > 1 { dw / (n - 1) as f32 } else { dw };
 
-        let padding = 2.0;
-        let draw_w = w - padding * 2.0;
-        let draw_h = h - padding * 2.0;
+        let to_x = |i: usize| -> f32 { lm + i as f32 * step_x };
+        let to_y = |v: f64| -> f32 { tm + dh - ((v - min) / range * dh as f64) as f32 };
 
-        let step_x = draw_w / (self.points.len() - 1) as f32;
-        let to_y = |v: f64| -> f32 { padding + draw_h - ((v - min) / range * draw_h as f64) as f32 };
+        let txt_color = Color::from_rgb(0.55, 0.55, 0.63);
+        let grid_color = Color::from_rgba(0.18, 0.18, 0.22, 0.5);
 
-        // Draw line segments
-        for i in 0..self.points.len() - 1 {
-            let x1 = padding + i as f32 * step_x;
-            let x2 = padding + (i + 1) as f32 * step_x;
-            let y1 = to_y(self.points[i]);
-            let y2 = to_y(self.points[i + 1]);
-            let segment = canvas::Path::line(Point::new(x1, y1), Point::new(x2, y2));
-            frame.stroke(&segment, canvas::Stroke::default().with_color(self.color).with_width(1.5));
+        // Y轴网格线 + 标签
+        for i in 0..5 {
+            let ratio = 1.0 - i as f64 / 4.0;
+            let y = tm + dh * (1.0 - ratio) as f32;
+            frame.fill_rectangle(Point::new(lm, y), Size::new(dw, 0.5), grid_color);
+            let val = min + range * ratio;
+            frame.fill_text(canvas::Text {
+                content: format!("{:.0}", val),
+                position: Point::new(2.0, y - 5.0),
+                color: txt_color,
+                size: iced::Pixels(9.0),
+                ..Default::default()
+            });
         }
 
-        // Fill area under the line with a gradient-like transparent fill
-        // Last point to bottom-right, then bottom-left
-        let last_x = padding + (self.points.len() - 1) as f32 * step_x;
-        let last_y = to_y(*self.points.last().unwrap());
-        let first_y = to_y(self.points[0]);
+        // 折线
+        for i in 0..n - 1 {
+            let seg = canvas::Path::line(
+                Point::new(to_x(i), to_y(prices[i])),
+                Point::new(to_x(i + 1), to_y(prices[i + 1])),
+            );
+            frame.stroke(&seg, canvas::Stroke::default().with_color(self.color).with_width(2.0));
+        }
 
-        let fill_path = canvas::Path::new(|b| {
-            b.move_to(Point::new(padding, draw_h + padding));
-            b.line_to(Point::new(padding, first_y));
-            for i in 1..self.points.len() {
-                let x = padding + i as f32 * step_x;
-                let y = to_y(self.points[i]);
-                b.line_to(Point::new(x, y));
-            }
-            b.line_to(Point::new(last_x, draw_h + padding));
-            b.close();
-        });
+        // 填充区域
+        if n > 0 {
+            let fill_path = canvas::Path::new(|b| {
+                b.move_to(Point::new(lm, tm + dh));
+                b.line_to(Point::new(lm, to_y(prices[0])));
+                for i in 1..n {
+                    b.line_to(Point::new(to_x(i), to_y(prices[i])));
+                }
+                b.line_to(Point::new(to_x(n - 1), tm + dh));
+                b.close();
+            });
+            frame.fill(&fill_path, Color::from_rgba(self.color.r, self.color.g, self.color.b, 0.12));
+        }
 
-        let fill_color = Color::from_rgba(self.color.r, self.color.g, self.color.b, 0.1);
-        frame.fill(&fill_path, fill_color);
+        // X轴日期标签
+        if let (Some(first), Some(last)) = (self.bars.first(), self.bars.last()) {
+            let fmt = |d: &chrono::NaiveDate| d.format("%m-%d").to_string();
+            frame.fill_text(canvas::Text {
+                content: fmt(&first.date),
+                position: Point::new(lm, h - bm + 4.0),
+                color: txt_color, size: iced::Pixels(9.0), ..Default::default()
+            });
+            let ll = fmt(&last.date);
+            let tw = ll.len() as f32 * 5.5;
+            frame.fill_text(canvas::Text {
+                content: ll,
+                position: Point::new((to_x(n - 1) - tw).max(lm), h - bm + 4.0),
+                color: txt_color, size: iced::Pixels(9.0), ..Default::default()
+            });
+        }
 
         vec![frame.into_geometry()]
     }
 }
 
-// ── Home Page View ──
+// ── 首页视图 ──
+
+fn index_card<'a>(
+    name: &'a str,
+    idx: &'a MarketIndexData,
+    line_color: Color,
+) -> Element<'a, Message> {
+    let ch_color = if idx.change >= 0.0 { style::palette::RISE } else { style::palette::FALL };
+    let arrow = if idx.change >= 0.0 { "▲" } else { "▼" };
+    let sign = if idx.change >= 0.0 { "+" } else { "" };
+
+    let chart = canvas::Canvas::new(IndexChart {
+        bars: idx.bars.clone(),
+        color: line_color,
+    })
+    .width(200)
+    .height(90);
+
+    let row_content = row(vec![
+        column(vec![
+            text(name).size(20.0).color(style::palette::TEXT_PRIMARY).into(),
+            text("").size(4.0).into(),
+            text(format!("{:.2}", idx.price)).size(32.0).color(ch_color).into(),
+            row(vec![
+                text(format!("{} {}{:.2}", arrow, sign, idx.change)).size(14.0).color(ch_color).into(),
+                text(format!("({:+.2}%)", idx.change_pct)).size(14.0).color(ch_color).into(),
+            ]).spacing(4).into(),
+        ]).spacing(2).width(180).into(),
+        container(chart).into(),
+    ])
+    .spacing(16)
+    .align_y(iced::alignment::Vertical::Center);
+
+    container(row_content)
+        .width(Fill)
+        .padding(20)
+        .style(|_: &Theme| iced::widget::container::Style {
+            background: Some(style::palette::BG_DARK.into()),
+            border: iced::border::rounded(12),
+            ..Default::default()
+        })
+        .into()
+}
 
 pub fn view(state: &crate::state::AppState) -> Element<'_, Message> {
     let now_str = state.current_time.format("%Y-%m-%d %H:%M:%S").to_string();
-
-    // Generate mock data for each index
-    let indices = vec![
-        ("上证指数", mock_index_info("上证指数", 0.0), Color::from_rgb(0.9, 0.3, 0.3)),
-        ("深证成指", mock_index_info("深证成指", 0.5), Color::from_rgb(0.3, 0.6, 0.9)),
-        ("创业板指", mock_index_info("创业板指", -0.2), Color::from_rgb(0.2, 0.8, 0.4)),
-        ("科创50",   mock_index_info("科创50", 0.3), Color::from_rgb(1.0, 0.65, 0.0)),
+    let names = ["上证指数", "深证成指", "创业板指", "科创50"];
+    let colors = [
+        Color::from_rgb(0.9, 0.3, 0.3),
+        Color::from_rgb(0.3, 0.6, 0.9),
+        Color::from_rgb(0.2, 0.8, 0.4),
+        Color::from_rgb(1.0, 0.65, 0.0),
     ];
 
     let mut content = column![].spacing(12).padding(24);
 
-    // ── Header ──
-    content = content.push(
-        text("Stock Vision").size(32.0).color(Color::from_rgb(1.0, 0.65, 0.0))
-    );
-    content = content.push(
-        text("A股行情分析与投资工具").size(16.0).color(style::palette::TEXT_SECONDARY)
-    );
+    content = content.push(text("Stock Vision").size(32.0).color(Color::from_rgb(1.0, 0.65, 0.0)));
+    content = content.push(text("A股行情分析与投资工具").size(16.0).color(style::palette::TEXT_SECONDARY));
     content = content.push(text(now_str).size(14.0).color(style::palette::TEXT_ACCENT));
     content = content.push(text("").size(8.0));
 
-    // ── Market Overview Cards ──
-    content = content.push(
-        text("市场概况").size(20.0).color(style::palette::TEXT_PRIMARY)
-    );
+    content = content.push(text("市场概况").size(20.0).color(style::palette::TEXT_PRIMARY));
 
-    // Layout: 2x2 grid of index cards
-    for chunk in indices.chunks(2) {
-        let mut card_row = row![].spacing(16);
-        for (name, (data, price, change, change_pct), line_color) in chunk {
-            let ch_color = if *change >= 0.0 { style::palette::RISE } else { style::palette::FALL };
-            let arrow = if *change >= 0.0 { "▲" } else { "▼" };
-
-            // Sparkline canvas widget (120x50)
-            let sparkline = canvas::Canvas::new(Sparkline {
-                points: (*data).clone(),
-                color: *line_color,
-            })
-            .width(120).height(50);
-
-            let top_row: Element<'_, Message> = {
-                let info_col = column![
-                    text(*name).size(16.0).color(style::palette::TEXT_PRIMARY),
-                    row![
-                        text(format!("{:.2}", price)).size(22.0).color(ch_color),
-                        text("").width(6),
-                        text(format!("{} {}", arrow, if *change >= 0.0 { "+" } else { "" })).size(13.0).color(ch_color),
-                        text(format!("{:.2}%", change_pct)).size(13.0).color(ch_color),
-                    ].spacing(2).align_y(iced::alignment::Vertical::Center),
-                ].spacing(4);
-                let spacer: Element<'_, Message> = text("").width(12).into();
-                let chart: Element<'_, Message> = iced::widget::container(sparkline).into();
-                row(vec![info_col.into(), spacer, chart])
-                    .align_y(iced::alignment::Vertical::Center)
-                    .into()
-            };
-
-            let card = container(top_row)
-            .width(Fill)
-            .padding(16)
-            .style(|_t: &Theme| iced::widget::container::Style {
-                background: Some(style::palette::BG_DARK.into()),
-                border: iced::border::rounded(8),
-                ..Default::default()
-            });
-
-            card_row = card_row.push(card);
+    // 遍历指数数据，一行一个卡片
+    for (i, name) in names.iter().enumerate() {
+        if let Some(idx) = state.market_indices.get(i) {
+            content = content.push(index_card(name, idx, colors[i]));
         }
-        content = content.push(card_row);
     }
 
     content = content.push(text("").size(12.0));
 
-    // ── Quick start guide ──
-    content = content.push(
-        text("快速开始").size(20.0).color(style::palette::TEXT_PRIMARY)
-    );
-
-    let tips = vec![
+    content = content.push(text("快速开始").size(20.0).color(style::palette::TEXT_PRIMARY));
+    let tips = [
         "🔍 在左侧搜索框输入股票代码或名称，搜索并选择股票",
         "📈 查看 K 线走势、成交量、MACD 等技术指标",
         "📋 分析公司基本面财务数据",

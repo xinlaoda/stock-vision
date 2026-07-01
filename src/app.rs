@@ -35,6 +35,7 @@ pub enum Message {
     PanBy(f32),
     AddDrawingLine(f64),
     ClearDrawingLines,
+    MarketIndicesLoaded(Vec<crate::state::MarketIndexData>),
 }
 
 pub struct StockVision {
@@ -47,13 +48,25 @@ impl StockVision {
     pub fn new() -> (Self, Task<Message>) {
         let state = AppState::new();
         let ds = Arc::new(DataService::new(state.storage.clone()));
+
+        // Start background load of market index data
+        let task = {
+            let ds2 = ds.clone();
+            Task::perform(
+                async move {
+                    ds2.load_market_indices().await.unwrap_or_default()
+                },
+                Message::MarketIndicesLoaded,
+            )
+        };
+
         (
             Self {
                 state,
                 data_service: ds,
                 analyzer: FinancialAnalyzer,
             },
-            Task::none(),
+            task,
         )
     }
 
@@ -196,6 +209,7 @@ impl StockVision {
                 Task::none()
             }
             Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
+            Message::MarketIndicesLoaded(indices) => { self.state.market_indices = indices; Task::none() }
             Message::AddDrawingLine(price) => { self.state.drawing_lines.push(crate::state::DrawingLine { price, color: (0.8, 0.8, 0.3) }); Task::none() }
             Message::ClearDrawingLines => { self.state.drawing_lines.clear(); Task::none() }
             Message::PanBy(dx) => { 

@@ -108,6 +108,17 @@ pub struct DrawingLine {
     pub color: (f32, f32, f32),
 }
 
+/// Market index real-time data
+#[derive(Debug, Clone)]
+pub struct MarketIndexData {
+    pub name: String,
+    pub code: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_pct: f64,
+    pub bars: Vec<stock_vision_data_model::DailyBar>,
+}
+
 pub struct AppState {
     // Search
     pub search_keyword: String,
@@ -135,6 +146,9 @@ pub struct AppState {
 
     // Browse history
     pub browse_history: Vec<Stock>,
+
+    // Market index data (home page)
+    pub market_indices: Vec<MarketIndexData>,
 
     // Watchlist
     pub watchlist: Vec<Stock>,
@@ -179,6 +193,7 @@ impl AppState {
             pan_offset: 0,
             drawing_lines: Vec::new(),
             browse_history: Vec::new(),
+            market_indices: Vec::new(),
             watchlist: Vec::new(),
             active_panel: Panel::default(),
             current_time: Utc::now(),

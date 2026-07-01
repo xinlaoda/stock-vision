@@ -134,4 +134,41 @@ impl DataService {
         }
         Ok(())
     }
+
+    /// Fetch real-time market indices data for the home page.
+    /// Uses Tencent's realtime quote API + K-line API.
+    pub async fn load_market_indices(&self) -> anyhow::Result<Vec<crate::state::MarketIndexData>> {
+        let indices: Vec<(&str, &str, Exchange)> = vec![
+            ("上证指数", "000001", Exchange::SH),
+            ("深证成指", "399001", Exchange::SZ),
+            ("创业板指", "399006", Exchange::SZ),
+            ("科创50",   "000688", Exchange::SH),
+        ];
+
+        let mut result = Vec::new();
+        for (name, code, exchange) in indices {
+            // Get K-line data for sparkline
+            let bars = self.kline_source.get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::None)).await.unwrap_or_default();
+            let bars_60: Vec<_> = bars.into_iter().rev().take(60).rev().collect();
+
+            let (price, change, change_pct) = if let Some(last) = bars_60.last() {
+                let first = bars_60.first().map(|b| b.close).unwrap_or(last.close);
+                (last.close, last.close - first, (last.close - first) / first * 100.0)
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+
+            result.push(crate::state::MarketIndexData {
+                name: name.to_string(),
+                code: code.to_string(),
+                price,
+                change,
+                change_pct,
+                bars: bars_60,
+            });
+        }
+
+        info!("Loaded {} market indices", result.len());
+        Ok(result)
+    }
 }
