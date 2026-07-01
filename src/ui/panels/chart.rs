@@ -200,6 +200,15 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 text("").into()
             };
 
+            // ── Export Button ──
+            let export_btn: Element<'_, Message> = if !state.daily_bars.is_empty() {
+                button(text("导出CSV").size(10.0))
+                    .on_press(Message::ExportCSV)
+                    .padding(3)
+                    .style(inactive_btn_style())
+                    .into()
+            } else { text("").into() };
+
             let content = column![
                 title_elem,
                 price_summary,
@@ -209,7 +218,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 range_row,
                 text("").size(2.0),
                 tooltip_row,
-                draw_btn,
+                row![draw_btn, export_btn].spacing(8),
                 chart_element,
             ].spacing(2).padding(16);
 

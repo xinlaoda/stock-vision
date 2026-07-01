@@ -61,6 +61,7 @@ pub enum Message {
     SetDrawingPoint2((usize, f64)),  // second click for trendline/ray
     CancelDrawing,
     ToggleTheme,
+    ExportCSV,
 }
 
 pub struct StockVision {
@@ -343,6 +344,14 @@ impl StockVision {
                 };
                 Task::none()
             }
+            Message::ExportCSV => {
+                let bars = self.state.daily_bars.clone();
+                let code = self.state.selected_stock.clone().unwrap_or_default();
+                Task::perform(async move {
+                    export_csv(&code, &bars).await;
+                    String::new()
+                }, |_| Message::Error(String::new()))
+            }
             Message::ToggleIndicator(indicator) => {
                 if let Some(pos) = self.state.active_indicators.iter().position(|i| *i == indicator) {
                     self.state.active_indicators.remove(pos);
@@ -537,6 +546,31 @@ impl StockVision {
         let clock = row![text("").width(Fill), text(ts).size(13.0)].padding(8);
         container(column![clock, content].width(Fill).height(Fill))
             .width(Fill).height(Fill).style(style::panel()).into()
+    }
+}
+
+/// Export daily bars to CSV file in the user's Documents folder
+async fn export_csv(code: &str, bars: &[stock_vision_data_model::DailyBar]) {
+    use std::io::Write;
+    if bars.is_empty() { return; }
+    let path = directories_next::ProjectDirs::from("com", "stock-vision", "StockVision")
+        .map(|d| d.data_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    std::fs::create_dir_all(&path).ok();
+    let file_path = path.join(format!("{}_kline_{}.csv", code, chrono::Utc::now().format("%Y%m%d_%H%M%S")));
+    
+    match std::fs::File::create(&file_path) {
+        Ok(mut file) => {
+            let _ = writeln!(file, "date,open,high,low,close,volume,amount");
+            for bar in bars {
+                let _ = writeln!(file, "{},{:.2},{:.2},{:.2},{:.2},{:.0},{:.0}",
+                    bar.date.format("%Y-%m-%d"), bar.open, bar.high, bar.low, bar.close, bar.volume, bar.amount);
+            }
+            tracing::info!("Exported CSV to {:?}", file_path);
+        }
+        Err(e) => {
+            tracing::warn!("Failed to export CSV: {}", e);
+        }
     }
 }
 
