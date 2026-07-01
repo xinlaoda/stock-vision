@@ -158,13 +158,33 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
             } else { text("").into() };
 
             // ── Drawing Tools ──
-            let draw_btn: Element<'_, Message> = if !state.drawing_lines.is_empty() {
-                row![
-                    button(text("清除画线").size(12.0)).on_press(Message::ClearDrawingLines).padding(4).style(|_t: &iced::Theme, _s: iced::widget::button::Status| iced::widget::button::Style { background: Some(style::palette::BG_LIGHT.into()), text_color: style::palette::TEXT_SECONDARY, ..Default::default() }),
-                    text(format!("{}条画线", state.drawing_lines.len())).size(12.0).color(style::palette::TEXT_ACCENT),
-                ].spacing(4).into()
+            let tool_btn = |mode: crate::state::DrawingToolMode, label: &'static str| {
+                let active = state.drawing_tool_mode == mode;
+                let btn = button(text(label).size(10.0))
+                    .on_press(Message::SetDrawingToolMode(mode))
+                    .padding(3);
+                if active { btn.style(active_period_style()) } else { btn.style(inactive_btn_style()) }
+            };
+            
+            // Pending drawing indicator
+            let draw_hint: Element<'_, Message> = if state.pending_drawing.is_some() {
+                text("点击K线图选择终点").size(12.0).color(Color::from_rgb(0.8, 0.3, 0.8)).into()
             } else {
-                text("点击K线图添加画线").size(12.0).color(style::palette::TEXT_SECONDARY).into()
+                text("").into()
+            };
+            
+            let draw_btn: Element<'_, Message> = {
+                let mut items: Vec<Element<'_, Message>> = Vec::new();
+                items.push(tool_btn(crate::state::DrawingToolMode::HorizontalLine, "水平线").into());
+                items.push(tool_btn(crate::state::DrawingToolMode::TrendLine, "趋势线").into());
+                items.push(tool_btn(crate::state::DrawingToolMode::Ray, "射线").into());
+                items.push(tool_btn(crate::state::DrawingToolMode::ParallelChannel, "平行通道").into());
+                items.push(button(text("清除").size(10.0)).on_press(Message::ClearDrawingLines).padding(3).style(inactive_btn_style()).into());
+                if !state.drawing_lines.is_empty() {
+                    items.push(text(format!("{}条", state.drawing_lines.len())).size(11.0).color(style::palette::TEXT_ACCENT).into());
+                }
+                items.push(draw_hint);
+                row(items).spacing(4).into()
             };
 
             // ── Chart ──

@@ -12,6 +12,7 @@ use stock_vision_analysis_core::FinancialAnalyzer;
 use crate::services::data_service::DataService;
 use crate::state::{AppState, KlinePeriod, Panel, TimeRange};
 use crate::services::indicator_service::IndicatorType;
+use crate::state::DrawingToolMode;
 use stock_vision_data_model::Exchange;
 use stock_vision_data_model::{IntradayBar, IntradayPeriod};
 use crate::ui::{panels, style};
@@ -55,6 +56,10 @@ pub enum Message {
     SetKDJ_M2(usize),
     SetRSIPeriod(usize),
     ReloadIndicators,
+    // Drawing tools
+    SetDrawingToolMode(DrawingToolMode),
+    SetDrawingPoint2((usize, f64)),  // second click for trendline/ray
+    CancelDrawing,
 }
 
 pub struct StockVision {
@@ -254,8 +259,82 @@ impl StockVision {
             }
             Message::HoverBar(idx) => { self.state.hovered_bar_index = idx; Task::none() }
             Message::MarketIndicesLoaded(indices) => { self.state.market_indices = indices; Task::none() }
-            Message::AddDrawingLine(price) => { self.state.drawing_lines.push(crate::state::DrawingLine { price, color: (0.8, 0.8, 0.3) }); Task::none() }
-            Message::ClearDrawingLines => { self.state.drawing_lines.clear(); Task::none() }
+            Message::AddDrawingLine(price) => {
+                let mode = self.state.drawing_tool_mode;
+                match mode {
+                    DrawingToolMode::None | DrawingToolMode::HorizontalLine => {
+                        // Add horizontal line at clicked price
+                        let max_idx = self.state.daily_bars.len().saturating_sub(1);
+                        self.state.drawing_lines.push(crate::state::DrawingLine {
+                            tool_type: DrawingToolMode::HorizontalLine,
+                            color: (0.8, 0.8, 0.3),
+                            price1: price,
+                            price2: 0.0,
+                            bar_idx1: max_idx,
+                            bar_idx2: max_idx,
+                        });
+                        Task::none()
+                    }
+                    _ => {
+                        // TrendLine / Ray / ParallelChannel: need two clicks
+                        match self.state.pending_drawing {
+                            None => {
+                                // First click: save starting point
+                                let idx = self.state.daily_bars.len().saturating_sub(1);
+                                self.state.pending_drawing = Some((idx, price));
+                                Task::none()
+                            }
+                            Some((idx1, price1)) => {
+                                // Second click: complete the drawing
+                                let idx2 = self.state.daily_bars.len().saturating_sub(1);
+                                let color = match mode {
+                                    DrawingToolMode::TrendLine => (0.3, 0.7, 1.0),
+                                    DrawingToolMode::Ray => (1.0, 0.4, 0.7),
+                                    DrawingToolMode::ParallelChannel => (0.4, 0.9, 0.4),
+                                    _ => (0.8, 0.8, 0.3),
+                                };
+                                self.state.drawing_lines.push(crate::state::DrawingLine {
+                                    tool_type: mode,
+                                    color,
+                                    price1,
+                                    price2: price,
+                                    bar_idx1: idx1,
+                                    bar_idx2: idx2,
+                                });
+                                self.state.pending_drawing = None;
+                                // Reset tool mode to None after drawing
+                                self.state.drawing_tool_mode = DrawingToolMode::None;
+                                Task::none()
+                            }
+                        }
+                    }
+                }
+            }
+            Message::ClearDrawingLines => { self.state.drawing_lines.clear(); self.state.pending_drawing = None; self.state.drawing_tool_mode = DrawingToolMode::None; Task::none() }
+            Message::SetDrawingToolMode(mode) => {
+                self.state.drawing_tool_mode = mode;
+                self.state.pending_drawing = None;
+                Task::none()
+            }
+            Message::SetDrawingPoint2((idx, price)) => {
+                if let Some((idx1, price1)) = self.state.pending_drawing {
+                    let color = (0.8, 0.3, 0.8);
+                    self.state.drawing_lines.push(crate::state::DrawingLine {
+                        tool_type: self.state.drawing_tool_mode,
+                        color,
+                        price1,
+                        price2: price,
+                        bar_idx1: idx1,
+                        bar_idx2: idx,
+                    });
+                    self.state.pending_drawing = None;
+                }
+                Task::none()
+            }
+            Message::CancelDrawing => {
+                self.state.pending_drawing = None;
+                Task::none()
+            }
             Message::ToggleIndicator(indicator) => {
                 if let Some(pos) = self.state.active_indicators.iter().position(|i| *i == indicator) {
                     self.state.active_indicators.remove(pos);

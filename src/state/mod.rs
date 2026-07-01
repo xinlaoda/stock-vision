@@ -102,11 +102,46 @@ impl TimeRange {
     }
 }
 
-/// A horizontal or trend line drawn on the chart
-#[derive(Debug, Clone, Copy)]
+/// Types of drawing tools
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DrawingToolMode {
+    /// None / idle
+    None,
+    /// Horizontal line at a price level
+    HorizontalLine,
+    /// Two-point trend line (click start, click end)
+    TrendLine,
+    /// Ray extending from a point
+    Ray,
+    /// Parallel channel (three clicks)
+    ParallelChannel,
+}
+
+impl DrawingToolMode {
+    pub fn label(&self) -> &str {
+        match self {
+            DrawingToolMode::None => "选择工具",
+            DrawingToolMode::HorizontalLine => "水平线",
+            DrawingToolMode::TrendLine => "趋势线",
+            DrawingToolMode::Ray => "射线",
+            DrawingToolMode::ParallelChannel => "平行通道",
+        }
+    }
+}
+
+/// A line or shape drawn on the chart
+#[derive(Debug, Clone)]
 pub struct DrawingLine {
-    pub price: f64,
+    pub tool_type: DrawingToolMode,
     pub color: (f32, f32, f32),
+    /// Price 1 (for horizontal line, this is the price)
+    pub price1: f64,
+    /// Price 2 (for trend line / ray)
+    pub price2: f64,
+    /// Bar index 1 (for trend line start)
+    pub bar_idx1: usize,
+    /// Bar index 2 (for trend line end)
+    pub bar_idx2: usize,
 }
 
 /// Market index real-time data
@@ -185,6 +220,8 @@ pub struct AppState {
 
     // Drawing tools
     pub drawing_lines: Vec<DrawingLine>,
+    pub drawing_tool_mode: DrawingToolMode,
+    pub pending_drawing: Option<(usize, f64)>,  // (bar_idx, price) for first click
 
     // Technical indicators
     pub active_indicators: Vec<IndicatorType>,
@@ -243,6 +280,8 @@ impl AppState {
             zoom_level: 60,
             pan_offset: 0,
             drawing_lines: Vec::new(),
+            drawing_tool_mode: DrawingToolMode::None,
+            pending_drawing: None,
             active_indicators: vec![IndicatorType::MACD],  // MACD enabled by default
             indicator_params: IndicatorParams::default(),
             browse_history: Vec::new(),

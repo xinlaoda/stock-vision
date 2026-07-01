@@ -597,20 +597,73 @@ impl Program<crate::app::Message> for CandlestickCanvas {
         }
 
         // ── Drawing Lines ──
-        let line_color = Color::from_rgba(0.8, 0.8, 0.3, 0.7);
         for dl in &self.drawing_lines {
-            let y = k_mp(dl.price);
-            // Draw horizontal line
-            let seg = Path::line(Point::new(sx, y), Point::new(sx + tw, y));
-            frame.stroke(&seg, canvas::Stroke::default().with_color(line_color).with_width(1.0));
-            // Small label
-            frame.fill_text(canvas::Text {
-                content: format!("{:.2}", dl.price),
-                position: Point::new(sx + 2.0, y - 8.0),
-                color: line_color,
-                size: iced::Pixels(9.0),
-                ..Default::default()
-            });
+            let color = Color::from_rgb(dl.color.0, dl.color.1, dl.color.2);
+            match dl.tool_type {
+                crate::state::DrawingToolMode::HorizontalLine | crate::state::DrawingToolMode::None => {
+                    let y = k_mp(dl.price1);
+                    let seg = Path::line(Point::new(sx, y), Point::new(sx + tw, y));
+                    frame.stroke(&seg, canvas::Stroke::default().with_color(color).with_width(1.0));
+                    frame.fill_text(canvas::Text {
+                        content: format!("{:.2}", dl.price1),
+                        position: Point::new(sx + 2.0, y - 8.0),
+                        color,
+                        size: iced::Pixels(9.0),
+                        ..Default::default()
+                    });
+                }
+                crate::state::DrawingToolMode::TrendLine | crate::state::DrawingToolMode::Ray => {
+                    // Draw line between two bar positions
+                    let sg = lay.start_global;
+                    let idx1 = dl.bar_idx1.saturating_sub(sg);
+                    let idx2 = dl.bar_idx2.saturating_sub(sg);
+                    if idx1 < bars.len() && idx2 < bars.len() {
+                        let x1 = sx + idx1 as f32 * sp + bw / 2.0;
+                        let y1 = k_mp(dl.price1);
+                        let x2 = sx + idx2 as f32 * sp + bw / 2.0;
+                        let y2 = k_mp(dl.price2);
+                        let seg = Path::line(Point::new(x1, y1), Point::new(x2, y2));
+                        frame.stroke(&seg, canvas::Stroke::default().with_color(color).with_width(1.0));
+                        // Dots at endpoints
+                        frame.fill(&Path::circle(Point::new(x1, y1), 2.5), color);
+                        frame.fill(&Path::circle(Point::new(x2, y2), 2.5), color);
+                        // If Ray, extend the line
+                        if dl.tool_type == crate::state::DrawingToolMode::Ray {
+                            let dx = x2 - x1;
+                            let dy = y2 - y1;
+                            if dx != 0.0 || dy != 0.0 {
+                                let extend_factor = 5.0;
+                                let x3 = x2 + dx * extend_factor;
+                                let y3 = y2 + dy * extend_factor;
+                                let ext = Path::line(Point::new(x2, y2), Point::new(x3, y3));
+                                frame.stroke(&ext, canvas::Stroke::default().with_color(color).with_width(0.5));
+                            }
+                        }
+                    }
+                }
+                crate::state::DrawingToolMode::ParallelChannel => {
+                    // Two parallel lines: first (idx1,price1)-(idx2,price2), then offset copy
+                    let sg = lay.start_global;
+                    let idx1 = dl.bar_idx1.saturating_sub(sg);
+                    let idx2 = dl.bar_idx2.saturating_sub(sg);
+                    if idx1 < bars.len() && idx2 < bars.len() {
+                        let x1 = sx + idx1 as f32 * sp + bw / 2.0;
+                        let y1 = k_mp(dl.price1);
+                        let x2 = sx + idx2 as f32 * sp + bw / 2.0;
+                        let y2 = k_mp(dl.price2);
+                        let seg = Path::line(Point::new(x1, y1), Point::new(x2, y2));
+                        frame.stroke(&seg, canvas::Stroke::default().with_color(color).with_width(1.0));
+                        // Parallel offset by a fixed amount
+                        let dx = x2 - x1;
+                        let dy = y2 - y1;
+                        let len = (dx * dx + dy * dy).sqrt().max(0.001);
+                        let ox = -dy / len * 15.0;
+                        let oy = dx / len * 15.0;
+                        let seg2 = Path::line(Point::new(x1 + ox, y1 + oy), Point::new(x2 + ox, y2 + oy));
+                        frame.stroke(&seg2, canvas::Stroke::default().with_color(color).with_width(0.8));
+                    }
+                }
+            }
         }
 
         // ── Crosshair ──
@@ -677,7 +730,28 @@ impl Program<crate::app::Message> for CandlestickCanvas {
                 None
             }
             canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
-                // Start drag: save starting position
+                if _state.drag_start_x.is_some() {
+                    // Already dragging
+                    return None;
+                }
+                
+                // Check if any drawing tool is active
+                // We handle drawing at the app level via HoverBar messages
+                // For simplicity, let's handle it via the hovered_index
+                if let Some(hover_idx) = self.hovered_index {
+                    let sg = self.get_visible_start();
+                    let bars = self.get_visible_bars();
+                    if hover_idx >= sg && hover_idx < sg + bars.len() {
+                        let li = hover_idx - sg;
+                        if li < bars.len() {
+                            let bar = &bars[li];
+                            // Return a click event - we'll process it in the drawing tool mode
+                            return Some(canvas::Action::publish(crate::app::Message::AddDrawingLine(bar.close)));
+                        }
+                    }
+                }
+                
+                // Start drag
                 if let Some(pos) = cursor.position_over(bounds) {
                     _state.drag_start_x = Some(pos.x);
                 }
