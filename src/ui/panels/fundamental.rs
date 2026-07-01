@@ -48,7 +48,11 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     );
                     for detail in &health.details {
                         content = content.push(
-                            text(format!("  ✅ {}", detail)).size(12).style(Color::from_rgb(0.6, 0.8, 0.6)),
+                            row![
+                                text("✅").font(crate::app::EMOJI_FONT).size(12),
+                                text(detail).size(12).style(Color::from_rgb(0.6, 0.8, 0.6)),
+                            ]
+                            .spacing(4),
                         );
                     }
                 }

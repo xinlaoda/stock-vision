@@ -1,5 +1,10 @@
 use iced::widget::{button, column, container, row, text, text_input, Column};
-use iced::{Application, Color, Command, Element, Length};
+use iced::{Alignment, Application, Color, Command, Element, Font, Length};
+
+/// The default font (Microsoft YaHei) has no emoji glyphs, and cosmic-text does
+/// not fall back for these codepoints, so emoji rendered as tofu boxes. Render
+/// emoji explicitly with the Windows emoji font instead.
+pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji");
 
 use stock_vision_data_model::*;
 use stock_vision_data_source::{DataSource, EastMoneySource, TencentSource};
@@ -192,11 +197,11 @@ impl StockVisionApp {
         };
 
         let panel_buttons = Column::new()
-            .push(button("📊 自选股").on_press(Message::PanelChanged(Panel::Watchlist)))
-            .push(button("📈 行情走势").on_press(Message::PanelChanged(Panel::Chart)))
-            .push(button("📋 基本面分析").on_press(Message::PanelChanged(Panel::Fundamental)))
-            .push(button("📐 技术分析").on_press(Message::PanelChanged(Panel::Technical)))
-            .push(button("⚙ 设置").on_press(Message::PanelChanged(Panel::Settings)))
+            .push(nav_button("📊", "自选股", Panel::Watchlist))
+            .push(nav_button("📈", "行情走势", Panel::Chart))
+            .push(nav_button("📋", "基本面分析", Panel::Fundamental))
+            .push(nav_button("📐", "技术分析", Panel::Technical))
+            .push(nav_button("⚙", "设置", Panel::Settings))
             .spacing(4);
 
         container(
@@ -226,4 +231,20 @@ impl StockVisionApp {
             Panel::Settings => panels::settings::view(&self.state),
         }
     }
+}
+
+/// Build a sidebar navigation button whose leading emoji icon is rendered with
+/// the emoji font while the label uses the default (CJK-capable) font.
+fn nav_button(
+    icon: &'static str,
+    label: &'static str,
+    panel: Panel,
+) -> iced::widget::Button<'static, Message> {
+    let content = row![
+        text(icon).font(EMOJI_FONT).size(15),
+        text(label).size(15),
+    ]
+    .spacing(6)
+    .align_items(Alignment::Center);
+    button(content).on_press(Message::PanelChanged(panel))
 }
