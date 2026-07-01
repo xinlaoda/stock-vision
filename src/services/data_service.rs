@@ -1,12 +1,14 @@
 use stock_vision_data_model::*;
-use stock_vision_data_source::{AdjustType, DataSource, FallbackSource, TencentSource, EastMoneySource};
+use stock_vision_data_source::{AdjustType, DataSource, FallbackSource, TencentSource, EastMoneySource, YahooSource};
 use stock_vision_storage::Storage;
 use std::sync::Arc;
 use tracing::info;
 
 pub struct DataService {
-    /// Primary data source (with fallback chain)
+    /// Primary data source for A-share (with fallback chain)
     source: FallbackSource,
+    /// Data source for US stocks (Yahoo Finance)
+    us_source: YahooSource,
     search_source: EastMoneySource,
     fin_source: EastMoneySource,
     storage: Arc<Storage>,
@@ -14,41 +16,65 @@ pub struct DataService {
 
 impl DataService {
     pub fn new(storage: Arc<Storage>) -> Self {
-        // Fallback chain: try Tencent first, then EastMoney, then Mock
+        // Fallback chain for A-share: try Tencent first, then EastMoney
         let source = FallbackSource::new(vec![
             Box::new(TencentSource::new()),
             Box::new(EastMoneySource::new()),
         ]);
         Self {
             source,
+            us_source: YahooSource::new(),
             search_source: EastMoneySource::new(),
             fin_source: EastMoneySource::new(),
             storage,
         }
     }
 
+    /// Select data source based on exchange
+    fn source_for_exchange(&self, exchange: &Exchange) -> &dyn DataSource {
+        if exchange.is_us() {
+            &self.us_source as &dyn DataSource
+        } else {
+            &self.source as &dyn DataSource
+        }
+    }
+
     pub async fn search_stocks(&self, keyword: &str) -> anyhow::Result<Vec<Stock>> {
-        self.search_source.search_stocks(keyword).await
+        // Try EastMoney first (A-share), then Yahoo (US stocks)
+        match self.search_source.search_stocks(keyword).await {
+            Ok(stocks) if !stocks.is_empty() => Ok(stocks),
+            _ => {
+                // Fallback to Yahoo for US stocks
+                self.us_source.search_stocks(keyword).await
+            }
+        }
     }
 
     /// Load daily bars with SQLite cache.
     /// Returns cached data if available (>= 100 bars), otherwise fetches from API.
+    /// For US stocks, skip cache threshold (fewer bars available) and use Yahoo source.
     pub async fn load_daily_bars(
         &self,
         code: &str,
         exchange: Exchange,
     ) -> anyhow::Result<Vec<DailyBar>> {
+        let is_us = exchange.is_us();
+        let min_bars = if is_us { 10 } else { 100 };
+
         // Check local cache first
         let cached = self.storage.get_daily_bars(code, 4000).unwrap_or_default();
 
-        if cached.len() >= 100 {
+        if cached.len() >= min_bars {
             info!("Using cached K-line for {} ({} bars)", code, cached.len());
             return Ok(cached);
         }
 
-        // Fetch from API
-        info!("Cache miss for {} K-line, fetching from Tencent API", code);
-        let bars = self.source
+        // Fetch from API (use different source for US vs A-share)
+        info!("Cache miss for {} K-line, fetching from {}", 
+            code, if is_us { "Yahoo Finance" } else { "Tencent API" });
+        
+        let source = self.source_for_exchange(&exchange);
+        let bars = source
             .get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::Forward))
             .await?;
 
@@ -95,16 +121,18 @@ impl DataService {
     }
 
     /// Smart background sync: only fetches data not yet in cache.
-    /// If daily bars already cached (>= 100 bars), skips network.
-    /// If financial reports already cached (>= 4 reports), skips network.
+    /// Uses correct data source based on exchange (Yahoo for US, Tencent/EastMoney for A-share).
     pub async fn load_all(&self, code: &str, exchange: Exchange) -> anyhow::Result<()> {
+        let is_us = exchange.is_us();
+        let min_bars = if is_us { 10 } else { 100 };
         let mut fetched_anything = false;
 
         // Daily bars: check cache
         let cached_bars = self.storage.get_daily_bars(code, 4000).unwrap_or_default();
-        if cached_bars.len() < 100 {
+        if cached_bars.len() < min_bars {
             info!("Background: fetching K-line for {} (cached: {} bars)", code, cached_bars.len());
-            if let Ok(bars) = self.source
+            let source = self.source_for_exchange(&exchange);
+            if let Ok(bars) = source
                 .get_daily_bars(code, exchange.clone(), None, None, Some(AdjustType::Forward))
                 .await
             {
@@ -118,19 +146,21 @@ impl DataService {
             info!("Background: K-line for {} already cached ({} bars), skipping", code, cached_bars.len());
         }
 
-        // Financial reports: check cache
-        let cached_reports = self.storage.get_financial_reports(code).unwrap_or_default();
-        if cached_reports.len() < 4 {
-            info!("Background: fetching financial reports for {} (cached: {} reports)", code, cached_reports.len());
-            if let Ok(reports) = self.fin_source.get_financial_reports(code, exchange.clone(), None).await {
-                if !reports.is_empty() {
-                    let _ = self.storage.save_financial_reports(&reports);
-                    fetched_anything = true;
-                    info!("Background: cached {} financial reports for {}", reports.len(), code);
+        // Financial reports: only for A-share (Yahoo doesn't support financial reports)
+        if !is_us {
+            let cached_reports = self.storage.get_financial_reports(code).unwrap_or_default();
+            if cached_reports.len() < 4 {
+                info!("Background: fetching financial reports for {} (cached: {} reports)", code, cached_reports.len());
+                if let Ok(reports) = self.fin_source.get_financial_reports(code, exchange.clone(), None).await {
+                    if !reports.is_empty() {
+                        let _ = self.storage.save_financial_reports(&reports);
+                        fetched_anything = true;
+                        info!("Background: cached {} financial reports for {}", reports.len(), code);
+                    }
                 }
+            } else {
+                info!("Background: financial reports for {} already cached, skipping", code);
             }
-        } else {
-            info!("Background: financial reports for {} already cached, skipping", code);
         }
 
         if fetched_anything {
@@ -214,12 +244,14 @@ impl DataService {
 
 
     /// Load the latest daily bars (for realtime quote updates).
+    /// Uses correct data source based on exchange.
     pub async fn load_latest_bars(
         &self,
         code: &str,
         exchange: Exchange,
     ) -> anyhow::Result<Vec<DailyBar>> {
-        let bars = self.source
+        let source = self.source_for_exchange(&exchange);
+        let bars = source
             .get_daily_bars(code, exchange, None, None, Some(AdjustType::Forward))
             .await?;
         if !bars.is_empty() {

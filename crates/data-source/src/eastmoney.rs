@@ -33,6 +33,7 @@ impl EastMoneySource {
             Exchange::SH => ".SH",
             Exchange::SZ => ".SZ",
             Exchange::BJ => ".BJ",
+            Exchange::NYSE | Exchange::NASDAQ => ".US",
         };
         format!("{}{}", code, mkt)
     }
@@ -258,6 +259,7 @@ impl DataSource for EastMoneySource {
             Exchange::SH => "1",
             Exchange::SZ => "0",
             Exchange::BJ => "0",
+            Exchange::NYSE | Exchange::NASDAQ => "0",
         };
 
         let klt = match period {

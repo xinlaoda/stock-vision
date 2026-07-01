@@ -26,6 +26,8 @@ pub enum Exchange {
     SZ, // Shenzhen
     SH, // Shanghai
     BJ, // Beijing
+    NYSE, // New York Stock Exchange
+    NASDAQ, // NASDAQ
 }
 
 impl Exchange {
@@ -34,7 +36,14 @@ impl Exchange {
             Exchange::SZ => "SZ",
             Exchange::SH => "SH",
             Exchange::BJ => "BJ",
+            Exchange::NYSE => "NYSE",
+            Exchange::NASDAQ => "NASDAQ",
         }
+    }
+
+    /// Check if this is a US stock exchange
+    pub fn is_us(&self) -> bool {
+        matches!(self, Exchange::NYSE | Exchange::NASDAQ)
     }
 }
 

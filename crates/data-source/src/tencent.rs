@@ -26,6 +26,7 @@ impl TencentSource {
                 Exchange::SH => "sh",
                 Exchange::SZ => "sz",
                 Exchange::BJ => "bj",
+                Exchange::NYSE | Exchange::NASDAQ => "us",
             },
             code
         )

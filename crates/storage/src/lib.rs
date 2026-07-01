@@ -217,6 +217,8 @@ impl Storage {
             let exchange = match exchange_str.as_str() {
                 "SH" => Exchange::SH,
                 "SZ" => Exchange::SZ,
+                "NYSE" => Exchange::NYSE,
+                "NASDAQ" => Exchange::NASDAQ,
                 _ => Exchange::SZ,
             };
             Ok(Stock {
@@ -281,6 +283,8 @@ impl Storage {
             let exchange = match exchange_str.as_str() {
                 "SH" => Exchange::SH,
                 "SZ" => Exchange::SZ,
+                "NYSE" => Exchange::NYSE,
+                "NASDAQ" => Exchange::NASDAQ,
                 _ => Exchange::SZ,
             };
             Ok(Stock {

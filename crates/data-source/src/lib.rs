@@ -1,6 +1,7 @@
 pub mod eastmoney;
 pub mod tencent;
 pub mod mock;
+pub mod yahoo;
 
 use async_trait::async_trait;
 use chrono::NaiveDate;
@@ -10,6 +11,7 @@ use stock_vision_data_model::*;
 pub use eastmoney::EastMoneySource;
 pub use tencent::TencentSource;
 pub use mock::MockSource;
+pub use yahoo::YahooSource;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AdjustType {
